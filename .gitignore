@@ -1,0 +1,31 @@
+# Local secrets
+.env
+
+# Python environments and caches
+.venv/
+.venv-*/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+
+# User recordings and generated session data
+audio/recordings/
+audio/raw/
+results/
+
+# Downloaded model weights and archives
+models/**
+!models/wakeword/
+!models/wakeword/custom/
+!models/wakeword/custom/keywords.txt
+*.tar
+*.tar.gz
+*.tar.bz2
+*.onnx
+
+# Editor and operating-system files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

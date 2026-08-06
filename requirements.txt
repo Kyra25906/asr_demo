@@ -1,0 +1,5 @@
+funasr
+modelscope
+sounddevice
+soundfile
+python-dontenv
