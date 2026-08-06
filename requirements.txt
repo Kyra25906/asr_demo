@@ -2,4 +2,4 @@ funasr
 modelscope
 sounddevice
 soundfile
-python-dontenv
+python-dotenv
