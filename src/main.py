@@ -23,6 +23,16 @@ from src.core.segment_processor import (
 from src.core.confirmation_record import (
     ConfirmationRecord,
 )
+from src.core.clarification_command_handler import (
+    ClarificationCommandResult,
+    try_handle_clarification_command,
+)
+from src.core.interaction_command import (
+    InteractionCommandType,
+)
+from src.core.pending_clarification import (
+    ClarificationStatus,
+)
 from src.core.reply_coordinator import (
     CoordinatedReply,
     ConfirmationResolution,
@@ -360,8 +370,16 @@ def display_unresolved_clarifications(
     )
 
     for clarification in active:
+        status_label = (
+            "已暂缓"
+            if clarification.status
+            == ClarificationStatus.DEFERRED
+            else "待回答"
+        )
         print(
-            f"- 第 {clarification.source_segment_id} 段："
+            f"- 问题 {clarification.display_number}"
+            f"（{status_label}），"
+            f"来源第 {clarification.source_segment_id} 段："
             f"{clarification.source_raw_text}"
         )
         print(
@@ -447,6 +465,48 @@ def display_confirmation_resolution(
             "错词确认已完成，"
             f"仍需补充：{remaining}。\n"
         )
+
+
+def display_clarification_command_result(
+    result: ClarificationCommandResult,
+) -> None:
+    """显示暂缓或回看命令的直接结果。"""
+
+    if result.command_type == InteractionCommandType.DEFER_CURRENT:
+        if result.deferred is None:
+            print("\n当前没有正在询问的问题。\n")
+            return
+
+        print(
+            f"\n已暂缓问题 {result.deferred.display_number}。"
+        )
+        print(
+            "你可以稍后说“查看待确认问题”"
+            "重新查看。\n"
+        )
+        return
+
+    if not result.unresolved:
+        print("\n当前没有待确认问题。\n")
+        return
+
+    print(
+        f"\n当前共有 {len(result.unresolved)} 个"
+        "待确认问题："
+    )
+    for clarification in result.unresolved:
+        status_label = (
+            "已暂缓"
+            if clarification.status
+            == ClarificationStatus.DEFERRED
+            else "待回答"
+        )
+        print(
+            f"- 问题 {clarification.display_number}"
+            f"（{status_label}）："
+            f"{clarification.question}"
+        )
+    print()
 
 
 def run_experiment_session(
@@ -579,13 +639,6 @@ def run_experiment_session(
                     .collect_ready()
                 )
 
-                display_completed_segments(
-                    completed_after_asr,
-                    reply_coordinator=(
-                        reply_coordinator
-                    ),
-                )
-
                 # 结束命令不写入 ASR 文件，
                 # 也不发送给 LLM。
                 if is_end_session_command(
@@ -594,6 +647,10 @@ def run_experiment_session(
                     print(
                         "\n检测到结束指令，"
                         "停止接收新的实验口述。"
+                    )
+                    display_completed_segments(
+                        completed_after_asr,
+                        reply_coordinator=reply_coordinator,
                     )
                     break
 
@@ -605,6 +662,41 @@ def run_experiment_session(
                 segment_id = (
                     utterance_count
                 )
+
+                try:
+                    clarification_command_result = (
+                        try_handle_clarification_command(
+                            asr_result=asr_result,
+                            session_id=session_id,
+                            segment_id=segment_id,
+                            reply_coordinator=reply_coordinator,
+                            asr_store=asr_store,
+                        )
+                    )
+                except Exception as error:
+                    print(
+                        "\n待确认命令保存失败："
+                        f"{type(error).__name__}: {error}"
+                    )
+                    print(
+                        "问题状态没有改变，"
+                        "系统将继续监听。\n"
+                    )
+                    display_completed_segments(
+                        completed_after_asr,
+                        reply_coordinator=reply_coordinator,
+                    )
+                    continue
+
+                if clarification_command_result is not None:
+                    display_clarification_command_result(
+                        clarification_command_result
+                    )
+                    display_completed_segments(
+                        completed_after_asr,
+                        reply_coordinator=reply_coordinator,
+                    )
+                    continue
 
                 try:
                     confirmation_resolution = (
@@ -631,13 +723,26 @@ def run_experiment_session(
                         "待确认项保持未解决，"
                         "系统将继续监听。\n"
                     )
+                    display_completed_segments(
+                        completed_after_asr,
+                        reply_coordinator=reply_coordinator,
+                    )
                     continue
 
                 if confirmation_resolution is not None:
                     display_confirmation_resolution(
                         confirmation_resolution
                     )
+                    display_completed_segments(
+                        completed_after_asr,
+                        reply_coordinator=reply_coordinator,
+                    )
                     continue
+
+                display_completed_segments(
+                    completed_after_asr,
+                    reply_coordinator=reply_coordinator,
+                )
 
                 experiment_segment_count += 1
 

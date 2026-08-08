@@ -6,7 +6,9 @@ class ClarificationStatus(str, Enum):
     """待确认项的生命周期状态。"""
 
     ACTIVE = "active"
+    DEFERRED = "deferred"
     RESOLVED = "resolved"
+    EXPIRED = "expired"
 
 
 @dataclass(frozen=True)
@@ -19,6 +21,7 @@ class PendingClarification:
     """
 
     clarification_id: str
+    display_number: int
     source_segment_id: int
     source_raw_text: str
     question: str
@@ -32,6 +35,8 @@ class PendingClarification:
     def __post_init__(self) -> None:
         if not self.clarification_id.strip():
             raise ValueError("clarification_id 不能为空。")
+        if self.display_number <= 0:
+            raise ValueError("display_number 必须大于 0。")
         if self.source_segment_id <= 0:
             raise ValueError("source_segment_id 必须大于 0。")
         if not self.source_raw_text.strip():
@@ -43,7 +48,7 @@ class PendingClarification:
         if any(not field_name.strip() for field_name in self.missing_fields):
             raise ValueError("missing_fields 不能包含空字符串。")
         if (
-            self.status == ClarificationStatus.ACTIVE
+            self.is_unresolved
             and not self.missing_fields
             and not self.requires_confirmation
         ):
@@ -52,10 +57,24 @@ class PendingClarification:
             )
         if self.revision <= 0:
             raise ValueError("revision 必须大于 0。")
+        if (
+            self.status != ClarificationStatus.ACTIVE
+            and self.reply_pending
+        ):
+            raise ValueError(
+                "只有 ACTIVE 问题可以等待主动提问。"
+            )
 
     @property
     def is_active(self) -> bool:
         return self.status == ClarificationStatus.ACTIVE
+
+    @property
+    def is_unresolved(self) -> bool:
+        return self.status in {
+            ClarificationStatus.ACTIVE,
+            ClarificationStatus.DEFERRED,
+        }
 
     def supply_fields(
         self,
@@ -65,7 +84,7 @@ class PendingClarification:
     ) -> "PendingClarification":
         """用后续段落提供的实体字段更新当前待确认项。"""
 
-        if not self.is_active or not field_names:
+        if not self.is_unresolved or not field_names:
             return self
 
         remaining_fields = tuple(
@@ -103,6 +122,66 @@ class PendingClarification:
 
         return replace(self, reply_pending=False)
 
+    def defer(
+        self,
+        *,
+        segment_id: int,
+    ) -> "PendingClarification":
+        """暂缓当前问题；问题仍然未解决。"""
+
+        if segment_id <= 0:
+            raise ValueError("segment_id 必须大于 0。")
+        if not self.is_active:
+            return self
+
+        return replace(
+            self,
+            status=ClarificationStatus.DEFERRED,
+            revision=self.revision + 1,
+            reply_pending=False,
+            last_updated_segment_id=segment_id,
+        )
+
+    def reactivate(
+        self,
+        *,
+        segment_id: int,
+    ) -> "PendingClarification":
+        """将暂缓问题重新放回可提问队列。"""
+
+        if segment_id <= 0:
+            raise ValueError("segment_id 必须大于 0。")
+        if self.status != ClarificationStatus.DEFERRED:
+            return self
+
+        return replace(
+            self,
+            status=ClarificationStatus.ACTIVE,
+            revision=self.revision + 1,
+            reply_pending=True,
+            last_updated_segment_id=segment_id,
+        )
+
+    def expire(
+        self,
+        *,
+        segment_id: int,
+    ) -> "PendingClarification":
+        """标记问题不再适用，但保留历史记录。"""
+
+        if segment_id <= 0:
+            raise ValueError("segment_id 必须大于 0。")
+        if not self.is_unresolved:
+            return self
+
+        return replace(
+            self,
+            status=ClarificationStatus.EXPIRED,
+            revision=self.revision + 1,
+            reply_pending=False,
+            last_updated_segment_id=segment_id,
+        )
+
     def confirm(
         self,
         *,
@@ -110,7 +189,7 @@ class PendingClarification:
     ) -> "PendingClarification":
         """确认当前 ASR 推测，并保留仍未补充的字段。"""
 
-        if not self.is_active or not self.requires_confirmation:
+        if not self.is_unresolved or not self.requires_confirmation:
             return self
 
         if not self.missing_fields:

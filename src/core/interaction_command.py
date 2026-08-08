@@ -1,0 +1,285 @@
+import re
+from dataclasses import dataclass
+from enum import Enum
+
+
+class InteractionCommandType(str, Enum):
+    """用户口述中可能包含的控制意图。"""
+
+    NORMAL = "normal"
+    END_SESSION = "end_session"
+    DEFER_CURRENT = "defer_current"
+    REVIEW_PENDING = "review_pending"
+    AFFIRM = "affirm"
+    DENY = "deny"
+    TARGETED_ANSWER = "targeted_answer"
+
+
+@dataclass(frozen=True)
+class InteractionCommand:
+    """
+    纯文本解析结果。
+
+    解析器只描述候选意图。需要待确认项上下文的命令，必须由
+    ReplyCoordinator 再判断是否可以执行。
+    """
+
+    command_type: InteractionCommandType
+    raw_text: str
+    normalized_text: str
+    target_question_number: int | None = None
+    answer_text: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.command_type == InteractionCommandType.TARGETED_ANSWER:
+            if (
+                self.target_question_number is None
+                or self.target_question_number <= 0
+            ):
+                raise ValueError(
+                    "指定问题答复必须包含大于 0 的问题编号。"
+                )
+        elif self.target_question_number is not None:
+            raise ValueError(
+                "只有指定问题答复可以包含问题编号。"
+            )
+
+    @property
+    def is_control_candidate(self) -> bool:
+        return self.command_type != InteractionCommandType.NORMAL
+
+    @property
+    def requires_clarification_context(self) -> bool:
+        return self.command_type in {
+            InteractionCommandType.DEFER_CURRENT,
+            InteractionCommandType.REVIEW_PENDING,
+            InteractionCommandType.AFFIRM,
+            InteractionCommandType.DENY,
+            InteractionCommandType.TARGETED_ANSWER,
+        }
+
+
+class InteractionCommandParser:
+    """使用保守、确定性的规则解析交互命令。"""
+
+    END_SESSION_COMMANDS = {
+        "结束实验记录",
+        "结束记录",
+        "结束本次实验",
+        "退出实验记录",
+        "结束实验",
+
+        # 只保留真实验收中观察到的 ASR 变体。
+        "接受实验记录",
+    }
+
+    DEFER_CURRENT_COMMANDS = {
+        "这个先跳过",
+        "当前问题先跳过",
+        "这个问题先跳过",
+        "稍后再问",
+        "稍后回答",
+        "暂时无法回答",
+    }
+
+    REVIEW_PENDING_COMMANDS = {
+        "查看待确认问题",
+        "查看未解决问题",
+        "还有哪些问题",
+        "重复待确认问题",
+    }
+
+    AFFIRM_EXACT = {
+        "是",
+        "是的",
+        "对",
+        "对的",
+        "正确",
+        "没错",
+        "确认",
+    }
+
+    AFFIRM_PREFIXES = (
+        "是的是",
+        "没错是",
+        "确认是",
+    )
+
+    DENY_EXACT = {
+        "不是",
+        "不对",
+        "错误",
+        "否",
+    }
+
+    DENY_PREFIXES = (
+        "不是是",
+        "不对应该是",
+        "错误应该是",
+    )
+
+    TARGET_PATTERNS = (
+        re.compile(
+            r"^(?:回答)?问题"
+            r"(?P<number>\d+|[一二三四五六七八九十]+)"
+            r"(?P<answer>.*)$"
+        ),
+        re.compile(
+            r"^(?:回答)?第?"
+            r"(?P<number>\d+|[一二三四五六七八九十]+)"
+            r"个?问题(?P<answer>.*)$"
+        ),
+    )
+
+    @classmethod
+    def parse(
+        cls,
+        text: str,
+    ) -> InteractionCommand:
+        raw_text = text
+        normalized = cls.normalize(text)
+
+        if normalized in cls.END_SESSION_COMMANDS:
+            return cls._simple_command(
+                InteractionCommandType.END_SESSION,
+                raw_text,
+                normalized,
+            )
+
+        if normalized in cls.DEFER_CURRENT_COMMANDS:
+            return cls._simple_command(
+                InteractionCommandType.DEFER_CURRENT,
+                raw_text,
+                normalized,
+            )
+
+        if normalized in cls.REVIEW_PENDING_COMMANDS:
+            return cls._simple_command(
+                InteractionCommandType.REVIEW_PENDING,
+                raw_text,
+                normalized,
+            )
+
+        targeted_answer = cls._parse_targeted_answer(
+            raw_text,
+            normalized,
+        )
+        if targeted_answer is not None:
+            return targeted_answer
+
+        if (
+            normalized in cls.AFFIRM_EXACT
+            or normalized.startswith(cls.AFFIRM_PREFIXES)
+        ):
+            return cls._simple_command(
+                InteractionCommandType.AFFIRM,
+                raw_text,
+                normalized,
+                answer_text=normalized,
+            )
+
+        if (
+            normalized in cls.DENY_EXACT
+            or normalized.startswith(cls.DENY_PREFIXES)
+        ):
+            return cls._simple_command(
+                InteractionCommandType.DENY,
+                raw_text,
+                normalized,
+                answer_text=normalized,
+            )
+
+        return cls._simple_command(
+            InteractionCommandType.NORMAL,
+            raw_text,
+            normalized,
+        )
+
+    @staticmethod
+    def normalize(text: str) -> str:
+        """仅为命令匹配移除空白和常见标点，原文始终保留。"""
+
+        return re.sub(
+            r"[\s，。！？、,.!?；;：:]",
+            "",
+            text,
+        )
+
+    @classmethod
+    def _parse_targeted_answer(
+        cls,
+        raw_text: str,
+        normalized: str,
+    ) -> InteractionCommand | None:
+        for pattern in cls.TARGET_PATTERNS:
+            match = pattern.fullmatch(normalized)
+            if match is None:
+                continue
+
+            number = cls._parse_question_number(
+                match.group("number")
+            )
+            if number is None or number <= 0:
+                return None
+
+            answer = match.group("answer").strip() or None
+
+            return InteractionCommand(
+                command_type=(
+                    InteractionCommandType.TARGETED_ANSWER
+                ),
+                raw_text=raw_text,
+                normalized_text=normalized,
+                target_question_number=number,
+                answer_text=answer,
+            )
+
+        return None
+
+    @staticmethod
+    def _parse_question_number(
+        text: str,
+    ) -> int | None:
+        if text.isdigit():
+            return int(text)
+
+        digits = {
+            "一": 1,
+            "二": 2,
+            "三": 3,
+            "四": 4,
+            "五": 5,
+            "六": 6,
+            "七": 7,
+            "八": 8,
+            "九": 9,
+        }
+
+        if text == "十":
+            return 10
+        if len(text) == 2 and text[0] == "十":
+            return 10 + digits.get(text[1], 0)
+        if len(text) == 2 and text[1] == "十":
+            return digits.get(text[0], 0) * 10
+        if len(text) == 3 and text[1] == "十":
+            return (
+                digits.get(text[0], 0) * 10
+                + digits.get(text[2], 0)
+            )
+
+        return digits.get(text)
+
+    @staticmethod
+    def _simple_command(
+        command_type: InteractionCommandType,
+        raw_text: str,
+        normalized_text: str,
+        *,
+        answer_text: str | None = None,
+    ) -> InteractionCommand:
+        return InteractionCommand(
+            command_type=command_type,
+            raw_text=raw_text,
+            normalized_text=normalized_text,
+            answer_text=answer_text,
+        )

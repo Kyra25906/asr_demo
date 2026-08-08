@@ -60,6 +60,8 @@ class ReplyCoordinator:
 
     def __init__(self) -> None:
         self._clarifications: list[PendingClarification] = []
+        self._next_display_number = 1
+        self._current_clarification_id: str | None = None
 
     def ingest_analysis(
         self,
@@ -107,6 +109,7 @@ class ReplyCoordinator:
 
         index = self._clarifications.index(selected)
         self._clarifications[index] = selected.mark_replied()
+        self._current_clarification_id = selected.clarification_id
 
         return CoordinatedReply(
             clarification_id=selected.clarification_id,
@@ -116,13 +119,63 @@ class ReplyCoordinator:
         )
 
     def active_clarifications(self) -> tuple[PendingClarification, ...]:
-        """返回不可变快照，供主流程显示会话遗留问题。"""
+        """返回全部未解决项，兼容现有会话收尾调用。"""
 
         return tuple(
             clarification
             for clarification in self._clarifications
-            if clarification.is_active
+            if clarification.is_unresolved
         )
+
+    def current_clarification(self) -> PendingClarification | None:
+        """返回最近一次交给用户的、仍处于 ACTIVE 的问题。"""
+
+        for clarification in self._clarifications:
+            if (
+                clarification.clarification_id
+                == self._current_clarification_id
+                and clarification.is_active
+            ):
+                return clarification
+
+        return None
+
+    def defer_current(
+        self,
+        *,
+        segment_id: int,
+    ) -> PendingClarification | None:
+        """暂缓当前问题；没有当前问题时不猜测目标。"""
+
+        current = self.current_clarification()
+        if current is None:
+            return None
+
+        updated = current.defer(segment_id=segment_id)
+        index = self._clarifications.index(current)
+        self._clarifications[index] = updated
+        self._current_clarification_id = None
+        return updated
+
+    def reactivate_question(
+        self,
+        *,
+        display_number: int,
+        segment_id: int,
+    ) -> PendingClarification | None:
+        """按稳定显示编号重新激活一条暂缓问题。"""
+
+        for index, clarification in enumerate(self._clarifications):
+            if clarification.display_number != display_number:
+                continue
+
+            updated = clarification.reactivate(
+                segment_id=segment_id
+            )
+            self._clarifications[index] = updated
+            return updated if updated != clarification else None
+
+        return None
 
     def try_confirm_oldest(
         self,
@@ -286,6 +339,7 @@ class ReplyCoordinator:
 
         clarification = PendingClarification(
             clarification_id=f"segment-{segment_id}",
+            display_number=self._next_display_number,
             source_segment_id=segment_id,
             source_raw_text=raw_text,
             question=question,
@@ -294,6 +348,7 @@ class ReplyCoordinator:
         )
 
         self._clarifications.append(clarification)
+        self._next_display_number += 1
 
     @staticmethod
     def _collect_supplied_fields(
