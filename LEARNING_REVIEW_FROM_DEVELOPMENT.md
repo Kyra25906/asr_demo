@@ -1675,3 +1675,17 @@ LLMClientError不会在适配器中被吞掉或包装，因为其中的attempts�
 新增5项适配器测试，全量257项通过。测试使用Fake LLMClient，验证提示词和上下文确实发送、
 matched/uncertain能解析、非法JSON和非对象会拒绝、越权额外字段沿用核心校验、客户端错误对象和
 指标原样传播。下一步先做Fake客户端到Router的模块整链路，再进行真实DeepSeek烟雾和延迟测试。
+
+## 2026-08-09：模块集成测试检查“零件装起来还能不能工作”
+
+单元测试已经分别证明LLMIntentClassifier、IntentRouter和IntentPolicy正确，但分别正确不保证组合后
+一定正确。本轮新增`tests/test_llm_intent_router_integration.py`，用FakeLLMClient提供最底层字符串，
+让数据真实经过适配器JSON解析、候选校验、Router和风险策略，最后检查IntentRouteResult。
+
+整链路覆盖七类分支：精确结束命令完全跳过LLM；自然查看进入低风险上下文；自然结束只能请求
+确认；uncertain保留原文并弃权；非法JSON和客户端异常都降级且不执行控制；普通实验继续实验出口。
+这里没有Mock掉中间模块，所以能发现接口字段、枚举或异常在模块交界处不兼容的问题。
+
+新增7项模块集成测试，全量264项通过。它仍不证明DeepSeek一定按提示词分类，也不包含真实网络
+延迟。下一步建立独立真实烟雾入口，只使用固定非敏感句子，展示候选、策略出口、尝试次数和耗时；
+不接main，也不把逐条模型输出自动上传GitHub。
