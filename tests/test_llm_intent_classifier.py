@@ -74,6 +74,20 @@ class LLMIntentClassifierTests(unittest.TestCase):
             client.calls[0]["user_prompt"],
         )
 
+    def test_exposes_generation_attempts_and_processing_seconds(self):
+        client = FakeLLMClient(candidate_json())
+
+        result = LLMIntentClassifier(client).classify_with_metrics(
+            self.request()
+        )
+
+        self.assertEqual(result.attempts, 1)
+        self.assertEqual(result.processing_seconds, 0.1)
+        self.assertEqual(
+            result.candidate.command_type,
+            InteractionCommandType.REVIEW_PENDING,
+        )
+
     def test_accepts_clean_uncertain_candidate(self):
         client = FakeLLMClient(candidate_json(
             status="uncertain",

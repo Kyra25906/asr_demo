@@ -57,7 +57,7 @@ cd C:\Users\dahli\Desktop\asr_demo
 
 ## 3. 当前唯一下一项
 
-> 执行 `INTENT-02-LLM-REAL-01`：建立独立DeepSeek意图烟雾测试入口，用固定非敏感文本验证normal、review、end、uncertain及延迟；不接main，结果不自动写入GitHub。
+> 执行 `INTENT-02-ARCH-01`：根据真实平均1.808秒分类延迟，设计并比较“独立意图调用”与“合并进实验结构化调用”的数据合同和时序；先形成可测试决策，不接main。
 
 真实验收通过前，不继续接按问题编号回答、否定修正或 TTS。
 
@@ -67,7 +67,7 @@ cd C:\Users\dahli\Desktop\asr_demo
 
 | 顺序 | 优先级 | 任务 | 当前状态 | 本轮要得到的结果 | 进入下一项的条件 |
 |---:|---|---|---|---|---|
-| 1 | `P0` | `INTENT-02-LLM-REAL-01` DeepSeek意图烟雾验收 | `TODO` | 独立脚本运行固定非敏感样例，记录候选、策略出口和耗时 | normal/review/end/uncertain格式合法，高风险不直执，延迟可见 |
+| 1 | `P0` | `INTENT-02-ARCH-01` 意图调用架构决策 | `TODO` | 比较每段独立分类与统一LLM输出；纳入约1.808秒真实额外延迟 | 明确第一版调用次数、失败边界、数据结构和测试方案 |
 | 2 | `P2` | `ASR-CMD-REC-01` 独立语料采集器真实验收 | `AUTO_OK` | 代码和离线测试已完成；因用户当前不方便录音而后推 | 恢复录音后用正式入口完成24条并验证断点恢复 |
 | 3 | `P0` | `ASR-CMD-01` 新语料真实验收 | `AUTO_OK` | 用户照稿录24条；清单无猜测标签；生成新基线 | WAV、参考文本和识别文本逐条可追溯，基线可重复生成 |
 | 4 | `P2` | `ASR-CMD-02-HOTWORD-01` 固定热词参数对照 | `TODO` | 24条标准语料或Demo专业词确定后再做，不提前给main加热词 | 语料足够且热词候选有明确来源 |
@@ -302,7 +302,9 @@ A负责提供稳定消息协议和Mock数据，不应让前端直接读取 `main
 | `INTENT-02-PROMPT-01` | `P0` | 意图弃权状态与严格提示词合同 | `AUTO_OK` | IntentCandidate新增matched/uncertain；uncertain必须清空意图/编号/答案；新增稳定System Prompt和JSON User Prompt构造；Router显式标记classification_uncertain并禁止控制动作；提示词2项、相关27项、全量252项通过 |
 | `INTENT-02-LLM-ADAPTER-01` | `P0` | LLMIntentClassifier适配器 | `AUTO_OK` | 新增src/llm/intent_classifier.py；复用LLMClient.generate_json和提示词，将字符串解析为顶层JSON对象后严格构造IntentCandidate；合法、uncertain、非法JSON/非对象、额外字段、客户端异常5项通过；全量257项通过 |
 | `INTENT-02-LLM-INTEGRATION-01` | `P0` | LLM适配器与IntentRouter模块集成 | `AUTO_OK` | FakeLLMClient→LLMIntentClassifier→IntentRouter→IntentPolicy完整链路7项通过；精确绕过、自然查看、高风险结束、uncertain、非法JSON、客户端异常、普通实验均覆盖；全量264项通过 |
-| `INTENT-02-LLM-REAL-01` | `P0` | DeepSeek意图分类烟雾与延迟验收 | `TODO` | 使用固定非敏感样例和独立入口；记录模型候选、风险出口、attempts及processing_seconds；不接main，不上传逐条输出 |
+| `INTENT-02-LLM-REAL-01` | `P0` | DeepSeek意图分类烟雾与延迟验收 | `REAL_OK` | 独立脚本固定5条非敏感文本全部符合预期；normal/review/end/uncertain/targeted_answer及策略出口正确；均1次成功，耗时1.700～1.884秒，平均约1.808秒；未接main，未保存/上传逐条响应 |
+| `INTENT-02-ARCH-01` | `P0` | 独立意图调用与统一LLM调用架构决策 | `TODO` | 普通口述若先分类再结构化会增加约1.8秒和一次请求；需比较统一input_kind+intent+events输出、精确快速路径及失败降级后再接main |
+| `INTENT-02-LLM-TOKENS-01` | `P2` | 意图分类独立token上限 | `TODO` | 烟雾响应仅约33～50 completion tokens，但当前沿用LLM_MAX_TOKENS=2000；若保留独立调用，应增加较小的专用配置并复验截断 |
 | `INTENT-02-REPLY-GATE-01` | `P1` | LLM答复候选进入ReplyCoordinator前的目标校验 | `TODO` | 当前LLM的AFFIRM/DENY/TARGETED_ANSWER仍为DO_NOT_EXECUTE；必须定义目标存在、唯一或明确编号时的安全放行规则，不能凭候选直接写确认记录 |
 | `INTENT-02-SEMANTIC-01` | `P3` | 本地自然表达穷举 | `TODO` | 不作为当前主线；仅在未来有离线、低延迟或特定短语需求时补充，不能要求用户背命令语料 |
 | `MODEL-LOAD-01` | `P1` | ASR 和唤醒模型在进程内只加载一次 | `REAL_OK` | 当前 `main()` 启动时创建一次并跨会话复用 |
@@ -552,6 +554,7 @@ Word/PDF 属于表现层增强，可以在系统 TTS 之后完成。
 | 2026-08-09 | 增加模型弃权状态和严格意图提示词合同 | 提示词2项、意图相关27项、全量252项通过 | 未调用真实LLM；uncertain安全降级且不执行控制动作；动态输入以不可信JSON传递 | `P0 INTENT-02-LLM-ADAPTER-01`Fake客户端适配器 |
 | 2026-08-09 | 实现LLMIntentClassifier适配器 | 新增5项适配器测试；全量257项通过 | Fake LLMClient，无网络；提示词传递、matched/uncertain、非法响应和客户端异常已覆盖 | `P0 INTENT-02-LLM-INTEGRATION-01`模块整链路 |
 | 2026-08-09 | 完成Fake LLM意图模块整链路 | 新增7项模块集成测试；全量264项通过 | 无网络；从Fake客户端到风险出口的七类分支全部通过，未接main和ReplyCoordinator | `P0 INTENT-02-LLM-REAL-01`独立DeepSeek烟雾与延迟 |
+| 2026-08-09 | 建立并完成真实DeepSeek意图烟雾 | 脚本结构及指标测试新增2项；全量266项通过 | 固定5条非敏感文本5/5符合预期；均1次请求；1.700～1.884秒，平均约1.808秒；高风险结束只请求确认 | `P0 INTENT-02-ARCH-01`先解决两次串行调用取舍 |
 
 ## 7. 每轮结束时必须更新
 
