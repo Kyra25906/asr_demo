@@ -1,0 +1,6 @@
+funasr
+modelscope
+sounddevice
+soundfile
+python-dotenv
+sherpa-onnx

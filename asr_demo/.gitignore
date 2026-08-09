@@ -1,0 +1,37 @@
+# Local secrets
+.env
+
+# Python environments and caches
+.venv/
+.venv-*/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+
+# User recordings and generated session data
+audio/recordings/
+audio/raw/
+results/
+
+# Local evaluation runs (plans and curated baselines remain tracked)
+evaluation/pre_roll_real/attempts.jsonl
+evaluation/pre_roll_real/asr_results.jsonl
+evaluation/asr_commands/capture_attempts.jsonl
+evaluation/asr_commands/language_comparison.json
+
+# Downloaded model weights and archives
+models/**
+!models/wakeword/
+!models/wakeword/custom/
+!models/wakeword/custom/keywords.txt
+*.tar
+*.tar.gz
+*.tar.bz2
+*.onnx
+
+# Editor and operating-system files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

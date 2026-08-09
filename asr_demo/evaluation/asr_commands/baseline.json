@@ -1,0 +1,111 @@
+{
+  "sample_count": 14,
+  "labeled_text_sample_count": 14,
+  "exact_text_match_count": 8,
+  "exact_text_accuracy": 0.5714,
+  "intent_sample_count": 14,
+  "intent_match_count": 9,
+  "intent_accuracy": 0.6429,
+  "control_command_miss_count": 5,
+  "normal_content_false_trigger_count": 0,
+  "details": [
+    {
+      "sample_id": "cmd-141435-04",
+      "expected_intent": "defer_current",
+      "predicted_intent": "defer_current",
+      "intent_match": true,
+      "text_match": true
+    },
+    {
+      "sample_id": "cmd-141435-07",
+      "expected_intent": "review_pending",
+      "predicted_intent": "review_pending",
+      "intent_match": true,
+      "text_match": true
+    },
+    {
+      "sample_id": "cmd-141435-08",
+      "expected_intent": "defer_current",
+      "predicted_intent": "normal",
+      "intent_match": false,
+      "text_match": false
+    },
+    {
+      "sample_id": "cmd-141435-09",
+      "expected_intent": "defer_current",
+      "predicted_intent": "defer_current",
+      "intent_match": true,
+      "text_match": true
+    },
+    {
+      "sample_id": "cmd-141435-12",
+      "expected_intent": "review_pending",
+      "predicted_intent": "review_pending",
+      "intent_match": true,
+      "text_match": true
+    },
+    {
+      "sample_id": "normal-141435-15",
+      "expected_intent": "normal",
+      "predicted_intent": "normal",
+      "intent_match": true,
+      "text_match": true
+    },
+    {
+      "sample_id": "cmd-144408-02",
+      "expected_intent": "defer_current",
+      "predicted_intent": "normal",
+      "intent_match": false,
+      "text_match": true
+    },
+    {
+      "sample_id": "cmd-144408-05",
+      "expected_intent": "review_pending",
+      "predicted_intent": "normal",
+      "intent_match": false,
+      "text_match": true
+    },
+    {
+      "sample_id": "cmd-144408-06",
+      "expected_intent": "defer_current",
+      "predicted_intent": "normal",
+      "intent_match": false,
+      "text_match": false
+    },
+    {
+      "sample_id": "cmd-183942-05",
+      "expected_intent": "targeted_answer",
+      "predicted_intent": "targeted_answer",
+      "intent_match": true,
+      "text_match": false
+    },
+    {
+      "sample_id": "cmd-183942-12",
+      "expected_intent": "targeted_answer",
+      "predicted_intent": "targeted_answer",
+      "intent_match": true,
+      "text_match": true
+    },
+    {
+      "sample_id": "normal-185630-01",
+      "expected_intent": "normal",
+      "predicted_intent": "normal",
+      "intent_match": true,
+      "text_match": false
+    },
+    {
+      "sample_id": "cmd-185630-06",
+      "expected_intent": "targeted_answer",
+      "predicted_intent": "targeted_answer",
+      "intent_match": true,
+      "text_match": false
+    },
+    {
+      "sample_id": "cmd-185630-07",
+      "expected_intent": "review_pending",
+      "predicted_intent": "normal",
+      "intent_match": false,
+      "text_match": false
+    }
+  ]
+}
