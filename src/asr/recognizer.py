@@ -8,6 +8,7 @@ from funasr.utils.postprocess_utils import (
 )
 
 from src.config import ASR_MODEL, DEVICE, VAD_MODEL
+from src.asr.languages import SUPPORTED_SENSEVOICE_LANGUAGES
 from src.asr.schemas import ASRResult
 
 
@@ -26,11 +27,22 @@ class SpeechRecognizer:
 
         print("ASR模型加载完成")
 
-    def recognize(self, audio_path: Path) -> ASRResult:
+    def recognize(
+        self,
+        audio_path: Path,
+        *,
+        language: str = "auto",
+    ) -> ASRResult:
         audio_path = Path(audio_path)
 
         if not audio_path.exists():
             raise FileNotFoundError(f"找不到音频文件：{audio_path}")
+        if language not in SUPPORTED_SENSEVOICE_LANGUAGES:
+            raise ValueError(
+                "SenseVoice language 不受支持："
+                f"{language!r}；可选值为："
+                f"{sorted(SUPPORTED_SENSEVOICE_LANGUAGES)}"
+            )
 
         audio_info = sf.info(audio_path)
         audio_duration = audio_info.frames / audio_info.samplerate
@@ -42,7 +54,7 @@ class SpeechRecognizer:
         result = self.model.generate(
             input=str(audio_path),
             cache={},
-            language="auto",
+            language=language,
             use_itn=True,
             batch_size_s=60,
         )
@@ -62,6 +74,6 @@ class SpeechRecognizer:
             audio_duration_seconds=round(audio_duration, 3),
             recognition_seconds=round(recognition_seconds, 3),
             model=ASR_MODEL,
-            language="auto",
+            language=language,
             is_final=True,
         )

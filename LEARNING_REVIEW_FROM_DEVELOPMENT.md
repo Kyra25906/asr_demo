@@ -1531,3 +1531,22 @@ retry_requested和skipped都保留证据但仍留在pending_prompts。每个samp
 仍显示为未完成；全部完成时不会调用录音器。新增5项测试，全量215项通过。代码已经达到
 AUTO_OK，但真实24条采集因用户当前不方便录音而后推。下一步可使用既有14条人工标注WAV做
 language参数对照，不需要制造新音频。
+
+## 2026-08-09：同一批WAV只改变一个ASR参数
+
+这一轮开始做 `language=auto` 和 `language=zh` 的对照。这里的重点不是随便把主程序里的字符串
+改成`zh`，而是建立“控制变量实验”：同一个识别器、同一批14条WAV、相同顺序、相同ITN和批处理
+参数，只改变language。这样结果变好或变差时，才有理由认为差异来自语言参数。
+
+`SpeechRecognizer.recognize()`增加了关键字参数`language`，默认仍是`auto`，所以main现有行为不变。
+支持值放在轻量的`src/asr/languages.py`，比较脚本可以在不导入Torch和FunASR的情况下测试参数校验。
+真实运行入口才延迟导入`SpeechRecognizer`。这叫“延迟导入”，这里不是为了炫技，而是让纯业务逻辑
+测试不必承担模型加载、显卡库和网络检查的成本。
+
+`scripts/compare_asr_languages.py`不会覆盖manifest里的历史`observed_asr_text`。它复制每条记录，把每个
+候选参数的识别文本、模型原始文本、耗时和文本/意图指标写到独立报告。测试用FakeRecognizer证明：
+两种参数确实按同一音频顺序调用，原始行没有被修改，不支持或重复的语言值会被拒绝。
+
+本轮也发现正式`.venv`再次不可用：启动器仍指向Python 3.11.9原位置，但目标解释器已经不存在。
+Python 3.14只用于完成8项不加载模型的纯逻辑测试，不能替代项目约定的3.11真实ASR验收。因此当前
+代码状态是`CODED`而不是`AUTO_OK`；下一步先恢复3.11环境，再跑全量测试和14条真实WAV对照。
