@@ -1,5 +1,8 @@
 # Local secrets
 .env
+evaluation/asr_commands/capture_attempts.jsonl
+evaluation/asr_commands/captured_manifest.jsonl
+evaluation/asr_commands/captured_baseline.json
 
 # Python environments and caches
 .venv/
