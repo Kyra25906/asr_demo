@@ -3,6 +3,7 @@ import unittest
 from src.core.intent_classifier import (
     FakeIntentClassifier,
     IntentCandidate,
+    IntentCandidateStatus,
 )
 from src.core.intent_policy import (
     IntentDisposition,
@@ -221,6 +222,22 @@ class IntentRouterClassifierIntegrationTests(unittest.TestCase):
             result.classification_error,
             "TimeoutError: timeout",
         )
+        self.assertFalse(result.decision.may_execute_now)
+
+    def test_uncertain_candidate_abstains_without_control_action(self):
+        router = IntentRouter(classifier=FakeIntentClassifier({
+            "这个差不多了。": IntentCandidate(
+                status=IntentCandidateStatus.UNCERTAIN,
+                reason="可能描述操作，也可能表示结束。",
+            ),
+        }))
+
+        result = router.route("这个差不多了。")
+
+        self.assertTrue(result.classifier_used)
+        self.assertTrue(result.classification_uncertain)
+        self.assertTrue(result.is_experiment_text)
+        self.assertIsNone(result.classification_error)
         self.assertFalse(result.decision.may_execute_now)
 
 

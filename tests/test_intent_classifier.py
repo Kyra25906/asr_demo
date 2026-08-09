@@ -3,6 +3,7 @@ import unittest
 from src.core.intent_classifier import (
     FakeIntentClassifier,
     IntentCandidate,
+    IntentCandidateStatus,
     IntentClassificationInput,
     IntentClassifierError,
 )
@@ -33,6 +34,7 @@ class IntentClassificationInputTests(unittest.TestCase):
 class IntentCandidateTests(unittest.TestCase):
     def test_strictly_parses_valid_llm_candidate(self):
         candidate = IntentCandidate.from_mapping({
+            "status": "matched",
             "command_type": "review_pending",
             "target_question_number": None,
             "answer_text": None,
@@ -47,6 +49,7 @@ class IntentCandidateTests(unittest.TestCase):
 
     def test_rejects_missing_extra_or_unknown_fields(self):
         valid = {
+            "status": "matched",
             "command_type": "normal",
             "target_question_number": None,
             "answer_text": None,
@@ -64,6 +67,7 @@ class IntentCandidateTests(unittest.TestCase):
     def test_targeted_answer_requires_positive_target_number(self):
         with self.assertRaisesRegex(IntentClassifierError, "必须包含"):
             IntentCandidate.from_mapping({
+                "status": "matched",
                 "command_type": "targeted_answer",
                 "target_question_number": None,
                 "answer_text": "离心5分钟",
@@ -73,6 +77,7 @@ class IntentCandidateTests(unittest.TestCase):
     def test_non_targeted_intent_cannot_smuggle_target_number(self):
         with self.assertRaisesRegex(IntentClassifierError, "只有指定"):
             IntentCandidate.from_mapping({
+                "status": "matched",
                 "command_type": "end_session",
                 "target_question_number": 1,
                 "answer_text": None,
@@ -82,6 +87,7 @@ class IntentCandidateTests(unittest.TestCase):
     def test_non_answer_intent_cannot_smuggle_answer_text(self):
         with self.assertRaisesRegex(IntentClassifierError, "只有确认"):
             IntentCandidate.from_mapping({
+                "status": "matched",
                 "command_type": "end_session",
                 "target_question_number": None,
                 "answer_text": "立即执行",
@@ -94,6 +100,27 @@ class IntentCandidateTests(unittest.TestCase):
                 command_type=InteractionCommandType.END_SESSION,
                 evidence=IntentEvidence.EXACT_RULE,
             )
+
+    def test_uncertain_candidate_must_abstain_cleanly(self):
+        candidate = IntentCandidate.from_mapping({
+            "status": "uncertain",
+            "command_type": None,
+            "target_question_number": None,
+            "answer_text": None,
+            "reason": "语义不足。",
+        })
+
+        self.assertEqual(candidate.status, IntentCandidateStatus.UNCERTAIN)
+        self.assertIsNone(candidate.command_type)
+
+        with self.assertRaisesRegex(IntentClassifierError, "必须为null"):
+            IntentCandidate.from_mapping({
+                "status": "uncertain",
+                "command_type": "end_session",
+                "target_question_number": None,
+                "answer_text": None,
+                "reason": "不确定。",
+            })
 
 
 class FakeIntentClassifierTests(unittest.TestCase):

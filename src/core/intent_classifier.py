@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
 from typing import Any, Mapping, Protocol
 
 from src.core.intent_policy import IntentEvidence
@@ -11,6 +12,13 @@ from src.core.interaction_command import InteractionCommandType
 
 class IntentClassifierError(RuntimeError):
     """意图分类器调用失败或返回非法结果。"""
+
+
+class IntentCandidateStatus(str, Enum):
+    """模型是否有足够依据给出一个意图候选。"""
+
+    MATCHED = "matched"
+    UNCERTAIN = "uncertain"
 
 
 @dataclass(frozen=True)
@@ -45,13 +53,15 @@ class IntentClassificationInput:
 class IntentCandidate:
     """分类器返回的候选含义，不代表系统已授权执行。"""
 
-    command_type: InteractionCommandType
+    status: IntentCandidateStatus = IntentCandidateStatus.MATCHED
+    command_type: InteractionCommandType | None = None
     target_question_number: int | None = None
     answer_text: str | None = None
     reason: str | None = None
     evidence: IntentEvidence = IntentEvidence.LLM_CANDIDATE
 
     REQUIRED_FIELDS = frozenset({
+        "status",
         "command_type",
         "target_question_number",
         "answer_text",
@@ -62,6 +72,22 @@ class IntentCandidate:
         if self.evidence != IntentEvidence.LLM_CANDIDATE:
             raise ValueError(
                 "IntentCandidate只能表示LLM候选证据。"
+            )
+        if self.status == IntentCandidateStatus.MATCHED:
+            if self.command_type is None:
+                raise ValueError(
+                    "matched候选必须包含command_type。"
+                )
+        elif self.command_type is not None:
+            raise ValueError(
+                "uncertain候选的command_type必须为null。"
+            )
+        if self.status == IntentCandidateStatus.UNCERTAIN and (
+            self.target_question_number is not None
+            or self.answer_text is not None
+        ):
+            raise ValueError(
+                "uncertain候选不能包含目标编号或答案。"
             )
         if self.target_question_number is not None:
             if self.target_question_number <= 0:
@@ -112,11 +138,22 @@ class IntentCandidate:
             )
 
         try:
-            command_type = InteractionCommandType(data["command_type"])
+            status = IntentCandidateStatus(data["status"])
         except (TypeError, ValueError) as error:
             raise IntentClassifierError(
-                "command_type不受支持。"
+                "status不受支持。"
             ) from error
+
+        raw_command_type = data["command_type"]
+        if raw_command_type is None:
+            command_type = None
+        else:
+            try:
+                command_type = InteractionCommandType(raw_command_type)
+            except (TypeError, ValueError) as error:
+                raise IntentClassifierError(
+                    "command_type不受支持。"
+                ) from error
 
         target = data["target_question_number"]
         if target is not None and (
@@ -135,6 +172,7 @@ class IntentCandidate:
 
         try:
             return cls(
+                status=status,
                 command_type=command_type,
                 target_question_number=target,
                 answer_text=data["answer_text"],

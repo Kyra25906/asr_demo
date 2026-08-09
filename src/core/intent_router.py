@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from src.core.intent_classifier import (
+    IntentCandidateStatus,
     IntentClassificationInput,
     IntentClassifier,
 )
@@ -37,6 +38,7 @@ class IntentRouteResult:
     classifier_used: bool = False
     candidate_reason: str | None = None
     classification_error: str | None = None
+    classification_uncertain: bool = False
 
     def __post_init__(self) -> None:
         if self.command.command_type != self.decision.command_type:
@@ -46,6 +48,10 @@ class IntentRouteResult:
         if self.classification_error is not None and not self.classifier_used:
             raise ValueError(
                 "未调用分类器时不能包含classification_error。"
+            )
+        if self.classification_uncertain and not self.classifier_used:
+            raise ValueError(
+                "未调用分类器时不能标记classification_uncertain。"
             )
         if (
             self.candidate_reason is not None
@@ -101,6 +107,30 @@ class IntentRouter:
         )
         try:
             candidate = self._classifier.classify(request)
+            if candidate.status == IntentCandidateStatus.UNCERTAIN:
+                fallback_command = InteractionCommand(
+                    command_type=InteractionCommandType.NORMAL,
+                    raw_text=text,
+                    normalized_text=(
+                        InteractionCommandParser.normalize(text)
+                    ),
+                )
+                fallback_decision = IntentPolicyEvaluator.evaluate(
+                    InteractionCommandType.NORMAL,
+                    IntentEvidence.LLM_CANDIDATE,
+                )
+                return IntentRouteResult(
+                    command=fallback_command,
+                    decision=fallback_decision,
+                    classifier_used=True,
+                    candidate_reason=candidate.reason,
+                    classification_uncertain=True,
+                )
+
+            if candidate.command_type is None:
+                raise ValueError(
+                    "matched候选缺少command_type。"
+                )
             candidate_command = InteractionCommand(
                 command_type=candidate.command_type,
                 raw_text=text,

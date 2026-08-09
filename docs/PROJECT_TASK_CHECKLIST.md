@@ -57,7 +57,7 @@ cd C:\Users\dahli\Desktop\asr_demo
 
 ## 3. 当前唯一下一项
 
-> 执行 `INTENT-02-LLM-01`：实现LLMIntentClassifier适配器和严格提示词，先用Fake LLMClient测试JSON解析、超时与非法输出；不接main，并在真实调用前记录独立分类的延迟取舍。
+> 执行 `INTENT-02-LLM-ADAPTER-01`：实现LLMIntentClassifier适配器，复用现有LLMClient.generate_json；先用Fake LLMClient验证提示词传递、严格解析、超时和非法输出，不接main。
 
 真实验收通过前，不继续接按问题编号回答、否定修正或 TTS。
 
@@ -67,7 +67,7 @@ cd C:\Users\dahli\Desktop\asr_demo
 
 | 顺序 | 优先级 | 任务 | 当前状态 | 本轮要得到的结果 | 进入下一项的条件 |
 |---:|---|---|---|---|---|
-| 1 | `P0` | `INTENT-02-LLM-01` LLM分类适配器 | `TODO` | 使用现有LLMClient生成严格IntentCandidate；先Fake客户端单测 | 正常、低风险、高风险、非法JSON和超时路径通过 |
+| 1 | `P0` | `INTENT-02-LLM-ADAPTER-01` LLM分类适配器 | `TODO` | 使用现有LLMClient生成严格IntentCandidate；先Fake客户端单测 | matched、uncertain、非法JSON和客户端异常路径通过 |
 | 2 | `P2` | `ASR-CMD-REC-01` 独立语料采集器真实验收 | `AUTO_OK` | 代码和离线测试已完成；因用户当前不方便录音而后推 | 恢复录音后用正式入口完成24条并验证断点恢复 |
 | 3 | `P0` | `ASR-CMD-01` 新语料真实验收 | `AUTO_OK` | 用户照稿录24条；清单无猜测标签；生成新基线 | WAV、参考文本和识别文本逐条可追溯，基线可重复生成 |
 | 4 | `P2` | `ASR-CMD-02-HOTWORD-01` 固定热词参数对照 | `TODO` | 24条标准语料或Demo专业词确定后再做，不提前给main加热词 | 语料足够且热词候选有明确来源 |
@@ -299,7 +299,8 @@ A负责提供稳定消息协议和Mock数据，不应让前端直接读取 `main
 | `INTENT-02-EXACT-01` | `P0` | 精确命令统一路由 | `AUTO_OK` | 普通口述进入实验链路；查看/答复进入上下文；精确结束进入执行；保留raw_text和答复编号；自然表达不猜测；7项专项通过 |
 | `INTENT-02-CLASSIFIER-01` | `P0` | 定义LLM意图分类接口和候选结构 | `AUTO_OK` | 新增IntentClassificationInput、IntentCandidate、IntentClassifier协议、FakeIntentClassifier及IntentClassifierError；严格拒绝缺失/额外/越权字段；10项专项、全量242项通过；未调用真实LLM |
 | `INTENT-02-CLASSIFIER-ROUTE-01` | `P0` | Fake分类器接入IntentRouter | `AUTO_OK` | 精确命令绕过分类器；未命中才分类；候选统一经过风险策略；结束候选只REQUEST_CONFIRMATION；超时保留raw_text并降级为普通链路且记录错误；新增6项集成测试，全量248项通过；未接main |
-| `INTENT-02-LLM-01` | `P0` | 真实LLM意图分类适配器与提示词 | `TODO` | 复用LLMClient接口，严格输出IntentCandidate；先Fake客户端测试，再决定是否真实DeepSeek烟雾验收；需评估与实验结构化两次调用的延迟 |
+| `INTENT-02-PROMPT-01` | `P0` | 意图弃权状态与严格提示词合同 | `AUTO_OK` | IntentCandidate新增matched/uncertain；uncertain必须清空意图/编号/答案；新增稳定System Prompt和JSON User Prompt构造；Router显式标记classification_uncertain并禁止控制动作；提示词2项、相关27项、全量252项通过 |
+| `INTENT-02-LLM-ADAPTER-01` | `P0` | LLMIntentClassifier适配器 | `TODO` | 复用LLMClient接口与现有提示词，将模型mapping严格解析为IntentCandidate；先Fake客户端测试，再做真实DeepSeek烟雾验收；需测量额外分类延迟 |
 | `INTENT-02-REPLY-GATE-01` | `P1` | LLM答复候选进入ReplyCoordinator前的目标校验 | `TODO` | 当前LLM的AFFIRM/DENY/TARGETED_ANSWER仍为DO_NOT_EXECUTE；必须定义目标存在、唯一或明确编号时的安全放行规则，不能凭候选直接写确认记录 |
 | `INTENT-02-SEMANTIC-01` | `P3` | 本地自然表达穷举 | `TODO` | 不作为当前主线；仅在未来有离线、低延迟或特定短语需求时补充，不能要求用户背命令语料 |
 | `MODEL-LOAD-01` | `P1` | ASR 和唤醒模型在进程内只加载一次 | `REAL_OK` | 当前 `main()` 启动时创建一次并跨会话复用 |
@@ -546,6 +547,7 @@ Word/PDF 属于表现层增强，可以在系统 TTS 之后完成。
 | 2026-08-09 | 完成精确IntentRouter | 新增7项路由测试；路由/策略/解析器相关30项、全量232项通过 | 不需要真实麦克风；自然表达仍保守返回normal；未接协调器和main | `P0 INTENT-02-SEMANTIC-01`第一批本地自然表达候选 |
 | 2026-08-09 | 定义LLM意图分类接口与严格候选结构 | 新增10项专项测试；全量242项通过 | Fake实现不调用外部服务；模型候选无执行权，非法/越权JSON被拒绝 | `P0 INTENT-02-CLASSIFIER-ROUTE-01`先用Fake接路由 |
 | 2026-08-09 | FakeIntentClassifier接入精确路由与风险策略 | 新增6项集成测试；全量248项通过 | 无网络和真实LLM；精确优先、自然查看、高风险结束、指定答复、普通记录和超时降级均已验证；尚未调用ReplyCoordinator | `P0 INTENT-02-LLM-01`适配器与严格提示词 |
+| 2026-08-09 | 增加模型弃权状态和严格意图提示词合同 | 提示词2项、意图相关27项、全量252项通过 | 未调用真实LLM；uncertain安全降级且不执行控制动作；动态输入以不可信JSON传递 | `P0 INTENT-02-LLM-ADAPTER-01`Fake客户端适配器 |
 
 ## 7. 每轮结束时必须更新
 
