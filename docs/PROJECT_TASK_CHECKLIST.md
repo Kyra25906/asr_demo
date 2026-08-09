@@ -41,7 +41,7 @@ TODO → DESIGN → CODED → AUTO_OK → REAL_OK
 
 ## 2. 当前测试基线
 
-- 全量自动测试：`215 tests OK`（Python 3.11.9，2026-08-09）
+- 全量自动测试：`276 tests OK`（Python 3.11.9，2026-08-09）
 - 最近真实连续口述会话：`20260808_185630`
 - 真实会话已验证：编号回答成功只解决问题2并保留问题1；“看待确认问题”误入实验事件，作为 ASR/意图基线样本。
 
@@ -67,7 +67,7 @@ cd C:\Users\dahli\Desktop\asr_demo
 
 | 顺序 | 优先级 | 任务 | 当前状态 | 本轮要得到的结果 | 进入下一项的条件 |
 |---:|---|---|---|---|---|
-| 1 | `P0` | `INTENT-02-UNIFIED-CONTRACT-01` 统一理解数据合同 | `TODO` | 定义experiment/control/uncertain互斥结构和降级边界 | 严格字段、分支组合、原文保护和非法输出测试通过 |
+| 1 | `P0` | `INTENT-02-UNIFIED-CONTRACT-01` 统一理解数据合同 | `AUTO_OK` | 三分支不可变合同、严格解析和未分类NOTE降级已完成 | 待后续正式统一提示词与Processor使用本合同，再做真实LLM验收 |
 | 2 | `P2` | `ASR-CMD-REC-01` 独立语料采集器真实验收 | `AUTO_OK` | 代码和离线测试已完成；因用户当前不方便录音而后推 | 恢复录音后用正式入口完成24条并验证断点恢复 |
 | 3 | `P0` | `ASR-CMD-01` 新语料真实验收 | `AUTO_OK` | 用户照稿录24条；清单无猜测标签；生成新基线 | WAV、参考文本和识别文本逐条可追溯，基线可重复生成 |
 | 4 | `P2` | `ASR-CMD-02-HOTWORD-01` 固定热词参数对照 | `TODO` | 24条标准语料或Demo专业词确定后再做，不提前给main加热词 | 语料足够且热词候选有明确来源 |
@@ -304,7 +304,7 @@ A负责提供稳定消息协议和Mock数据，不应让前端直接读取 `main
 | `INTENT-02-LLM-INTEGRATION-01` | `P0` | LLM适配器与IntentRouter模块集成 | `AUTO_OK` | FakeLLMClient→LLMIntentClassifier→IntentRouter→IntentPolicy完整链路7项通过；精确绕过、自然查看、高风险结束、uncertain、非法JSON、客户端异常、普通实验均覆盖；全量264项通过 |
 | `INTENT-02-LLM-REAL-01` | `P0` | DeepSeek意图分类烟雾与延迟验收 | `REAL_OK` | 独立脚本固定5条非敏感文本全部符合预期；normal/review/end/uncertain/targeted_answer及策略出口正确；均1次成功，耗时1.700～1.884秒，平均约1.808秒；未接main，未保存/上传逐条响应 |
 | `INTENT-02-ARCH-01` | `P0` | 独立意图调用与统一LLM调用架构决策 | `DESIGN` | 决策为“精确规则本地快速路径＋未命中统一一次LLM理解”；两组完整真实配对中独立两次为5.809/5.621秒，统一一次冷缓存10.980秒、热缓存2.636秒；统一首次格式失败后补齐跨字段规则；另两次统一请求遇SSL断连，证据不足归因架构；先正式化合同再扩大评测 |
-| `INTENT-02-UNIFIED-CONTRACT-01` | `P0` | 统一输入理解三分支数据合同 | `TODO` | experiment返回严格LLMAnalysisResult，control返回IntentCandidate，uncertain返回弃权信息；三者必须互斥；失败保留raw_text并不得执行控制动作 |
+| `INTENT-02-UNIFIED-CONTRACT-01` | `P0` | 统一输入理解三分支数据合同 | `AUTO_OK` | 新增UnifiedUnderstandingResult及experiment/control/uncertain不可变分支；严格拒绝缺失、额外、混合、原文篡改和uncertain伪装control；失败可降级为保留原文的未分类NOTE且不产生控制候选；新增7项专项、全量276项通过；未接真实LLM、main或ReplyCoordinator |
 | `INTENT-02-LLM-TOKENS-01` | `P2` | 意图分类独立token上限 | `TODO` | 烟雾响应仅约33～50 completion tokens，但当前沿用LLM_MAX_TOKENS=2000；若保留独立调用，应增加较小的专用配置并复验截断 |
 | `INTENT-02-REPLY-GATE-01` | `P1` | LLM答复候选进入ReplyCoordinator前的目标校验 | `TODO` | 当前LLM的AFFIRM/DENY/TARGETED_ANSWER仍为DO_NOT_EXECUTE；必须定义目标存在、唯一或明确编号时的安全放行规则，不能凭候选直接写确认记录 |
 | `INTENT-02-SEMANTIC-01` | `P3` | 本地自然表达穷举 | `TODO` | 不作为当前主线；仅在未来有离线、低延迟或特定短语需求时补充，不能要求用户背命令语料 |
@@ -557,6 +557,7 @@ Word/PDF 属于表现层增强，可以在系统 TTS 之后完成。
 | 2026-08-09 | 完成Fake LLM意图模块整链路 | 新增7项模块集成测试；全量264项通过 | 无网络；从Fake客户端到风险出口的七类分支全部通过，未接main和ReplyCoordinator | `P0 INTENT-02-LLM-REAL-01`独立DeepSeek烟雾与延迟 |
 | 2026-08-09 | 建立并完成真实DeepSeek意图烟雾 | 脚本结构及指标测试新增2项；全量266项通过 | 固定5条非敏感文本5/5符合预期；均1次请求；1.700～1.884秒，平均约1.808秒；高风险结束只请求确认 | `P0 INTENT-02-ARCH-01`先解决两次串行调用取舍 |
 | 2026-08-09 | 对比独立两次与统一一次LLM理解 | 新增3项统一响应合同测试；全量269项通过；比较脚本可保留完整配对并记录失败轮次 | 首次统一输出因追问字段不一致被严格拒绝后补规则；有效配对：独立5.809/5.621秒，统一10.980冷/2.636热；后续统一请求两次遇SSL断连，未伪造完整均值 | 采用精确快速路径＋统一理解方向，先做`INTENT-02-UNIFIED-CONTRACT-01` |
+| 2026-08-09 | 正式化统一输入理解数据合同 | 新增7项专项测试；Python3.11全量276项通过 | 三分支显式互斥；模型不能覆盖raw_text、夹带未选分支或把uncertain伪装成control；网络/格式失败边界为未分类NOTE且无控制候选 | 下一轮单独定义正式统一提示词与Processor，仍不接main |
 
 ## 7. 每轮结束时必须更新
 

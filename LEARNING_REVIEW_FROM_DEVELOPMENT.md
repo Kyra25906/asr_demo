@@ -1727,3 +1727,24 @@ DO_NOT_EXECUTE。五次均首次成功，耗时为1.700～1.884秒，平均约1.
 LLM理解”。它避免普通实验固定两次串行请求，但独立IntentClassifier仍作为评测和可替换实现保留。
 下一步不能直接接main，而要把实验脚本里的临时联合JSON升级为正式三分支数据合同、严格解析器和
 保真降级。新增3项合同测试，全量269项通过。
+
+## 2026-08-09：数据合同不仅规定字段，还要阻止分支越权
+
+新增`src/core/unified_understanding.py`，把统一结果拆成`ExperimentUnderstanding`、
+`ControlUnderstanding`和`UncertainUnderstanding`三个不可变分支，由`UnifiedUnderstandingResult`
+保证每次恰好选择一个。正式JSON不再沿用比较脚本中临时的intent/analysis两个槽位，而是同时声明
+experiment/control/uncertain三个槽位：选中分支必须是严格对象，另外两个必须为null。这样混合输出
+不会被“尽量解析”，而会整体拒绝。
+
+experiment继续复用`parse_analysis()`，因此事件字段、实体、追问关系和ASR原文保护只有一套规则；
+control继续复用`IntentCandidate.from_mapping()`，并额外要求状态必须是matched。uncertain只有非空
+reason，不存在命令、问题编号或答案字段，所以模型无法在“弃权”外壳里夹带可执行内容。
+
+`raw_text`不属于模型可写的顶层字段，而由程序通过`expected_raw_text`注入正式结果。模型若篡改事件
+中的raw_text，现有分析校验会拒绝。网络或格式失败时，`build_degraded_understanding()`只生成保留
+原文的未分类NOTE，不生成ControlUnderstanding；NOTE内部的确认标志、追问标志和追问文本也保持
+一致。合同层只构造数据，不调用ReplyCoordinator，也不控制main状态机。
+
+新增7项Fake JSON测试，覆盖三个合法分支、字段缺失/额外、混合分支、原文篡改、uncertain伪装
+control和失败降级。Python3.11全量276项通过，状态为AUTO_OK；这还不是DeepSeek真实验收。下一轮
+应单独定义正式统一提示词和Processor，并让它们消费本合同，仍不接main。
