@@ -69,6 +69,8 @@ class ReplyCoordinator:
         segment_id: int,
         raw_text: str,
         analysis: LLMAnalysisResult,
+        target_clarification_id: str | None = None,
+        confirms_target_suggestion: bool = False,
     ) -> None:
         """先用当前结果更新旧问题，再登记当前段的新问题。"""
 
@@ -81,9 +83,22 @@ class ReplyCoordinator:
         self._apply_supplied_fields(
             supplied_fields,
             segment_id=segment_id,
+            target_clarification_id=target_clarification_id,
         )
 
-        if analysis.should_ask_follow_up:
+        if (
+            target_clarification_id is not None
+            and confirms_target_suggestion
+        ):
+            self._confirm_target(
+                target_clarification_id,
+                segment_id=segment_id,
+            )
+
+        if (
+            target_clarification_id is None
+            and analysis.should_ask_follow_up
+        ):
             self._register_clarification(
                 segment_id=segment_id,
                 raw_text=raw_text,
@@ -126,6 +141,24 @@ class ReplyCoordinator:
             for clarification in self._clarifications
             if clarification.is_unresolved
         )
+
+    def find_unresolved_by_display_number(
+        self,
+        display_number: int,
+    ) -> PendingClarification | None:
+        """按用户看到的稳定编号查找未解决问题。"""
+
+        if display_number <= 0:
+            return None
+
+        for clarification in self._clarifications:
+            if (
+                clarification.display_number == display_number
+                and clarification.is_unresolved
+            ):
+                return clarification
+
+        return None
 
     def current_clarification(self) -> PendingClarification | None:
         """返回最近一次交给用户的、仍处于 ACTIVE 的问题。"""
@@ -297,11 +330,20 @@ class ReplyCoordinator:
         supplied_fields: set[str],
         *,
         segment_id: int,
+        target_clarification_id: str | None = None,
     ) -> None:
         updated_items = []
 
         for clarification in self._clarifications:
-            if clarification.source_segment_id < segment_id:
+            matches_target = (
+                target_clarification_id is None
+                or clarification.clarification_id
+                == target_clarification_id
+            )
+            if (
+                matches_target
+                and clarification.source_segment_id < segment_id
+            ):
                 clarification = clarification.supply_fields(
                     supplied_fields,
                     segment_id=segment_id,
@@ -310,6 +352,23 @@ class ReplyCoordinator:
             updated_items.append(clarification)
 
         self._clarifications = updated_items
+
+    def _confirm_target(
+        self,
+        clarification_id: str,
+        *,
+        segment_id: int,
+    ) -> None:
+        """用指定编号答复中的明确肯定语句确认原ASR推测。"""
+
+        for index, clarification in enumerate(self._clarifications):
+            if clarification.clarification_id != clarification_id:
+                continue
+
+            self._clarifications[index] = clarification.confirm(
+                segment_id=segment_id
+            )
+            return
 
     def _register_clarification(
         self,

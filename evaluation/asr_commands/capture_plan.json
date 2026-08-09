@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "prompts": [
+    {"sample_id":"review-01","expected_intent":"review_pending","prompt_text":"查看待确认问题。","critical_terms":["查看","待确认问题"]},
+    {"sample_id":"review-02","expected_intent":"review_pending","prompt_text":"还有什么问题没有回答？","critical_terms":["问题","没有回答"]},
+    {"sample_id":"review-03","expected_intent":"review_pending","prompt_text":"把刚才的问题再说一遍。","critical_terms":["刚才的问题","再说一遍"]},
+    {"sample_id":"review-04","expected_intent":"review_pending","prompt_text":"我想看看还缺哪些信息。","critical_terms":["还缺","信息"]},
+
+    {"sample_id":"defer-01","expected_intent":"defer_current","prompt_text":"这个先跳过。","critical_terms":["这个","跳过"]},
+    {"sample_id":"defer-02","expected_intent":"defer_current","prompt_text":"这个问题先放着。","critical_terms":["问题","先放着"]},
+    {"sample_id":"defer-03","expected_intent":"defer_current","prompt_text":"我现在还不知道，稍后回答。","critical_terms":["还不知道","稍后回答"]},
+    {"sample_id":"defer-04","expected_intent":"defer_current","prompt_text":"先问下一个问题。","critical_terms":["下一个问题"]},
+
+    {"sample_id":"end-01","expected_intent":"end_session","prompt_text":"结束实验记录。","critical_terms":["结束","实验记录"]},
+    {"sample_id":"end-02","expected_intent":"end_session","prompt_text":"今天先记录到这里。","critical_terms":["记录到这里"]},
+    {"sample_id":"end-03","expected_intent":"end_session","prompt_text":"停止本次实验记录。","critical_terms":["停止","本次实验记录"]},
+    {"sample_id":"end-04","expected_intent":"end_session","prompt_text":"实验记录可以结束了。","critical_terms":["实验记录","结束"]},
+
+    {"sample_id":"target-01","expected_intent":"targeted_answer","prompt_text":"问题二，离心时间是五分钟。","critical_terms":["问题二","离心时间","五分钟"]},
+    {"sample_id":"target-02","expected_intent":"targeted_answer","prompt_text":"回答问题一，使用的是移液枪。","critical_terms":["问题一","移液枪"]},
+    {"sample_id":"target-03","expected_intent":"targeted_answer","prompt_text":"第三个问题，水浴温度是六十摄氏度。","critical_terms":["第三个问题","水浴","六十摄氏度"]},
+    {"sample_id":"target-04","expected_intent":"targeted_answer","prompt_text":"关于离心的问题，转速是三千转每分钟。","critical_terms":["离心","三千转每分钟"]},
+
+    {"sample_id":"affirm-01","expected_intent":"affirm","prompt_text":"是的。","critical_terms":["是的"]},
+    {"sample_id":"affirm-02","expected_intent":"affirm","prompt_text":"没错，使用的是移液枪。","critical_terms":["没错","移液枪"]},
+    {"sample_id":"affirm-03","expected_intent":"affirm","prompt_text":"对，温度是六十摄氏度。","critical_terms":["对","六十摄氏度"]},
+
+    {"sample_id":"deny-01","expected_intent":"deny","prompt_text":"不是。","critical_terms":["不是"]},
+    {"sample_id":"deny-02","expected_intent":"deny","prompt_text":"不对，应该是滴定管。","critical_terms":["不对","滴定管"]},
+    {"sample_id":"deny-03","expected_intent":"deny","prompt_text":"不是五分钟，是十分钟。","critical_terms":["不是","十分钟"]},
+
+    {"sample_id":"normal-01","expected_intent":"normal","prompt_text":"跳过过滤步骤，继续加热溶液。","critical_terms":["过滤步骤","加热溶液"]},
+    {"sample_id":"normal-02","expected_intent":"normal","prompt_text":"记录溶液由无色逐渐变为浅蓝色。","critical_terms":["记录","浅蓝色"]}
+  ]
+}

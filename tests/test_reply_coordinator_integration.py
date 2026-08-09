@@ -154,6 +154,102 @@ class ReplyCoordinatorIntegrationTests(unittest.TestCase):
         self.assertEqual(coordinator.active_clarifications(), ())
         self.assertIsNone(coordinator.pop_next_reply())
 
+    def test_targeted_answer_updates_only_selected_question(self):
+        coordinator = ReplyCoordinator()
+        with redirect_stdout(io.StringIO()):
+            display_completed_segments(
+                [
+                    make_completed_segment(
+                        segment_id=1,
+                        raw_text="将样品离心。",
+                        missing_fields=["duration"],
+                        question="离心多长时间？",
+                    ),
+                    make_completed_segment(
+                        segment_id=2,
+                        raw_text="将溶液水浴加热。",
+                        missing_fields=["duration"],
+                        question="水浴多长时间？",
+                    ),
+                ],
+                reply_coordinator=coordinator,
+            )
+
+        answer = make_completed_segment(
+            segment_id=3,
+            raw_text="问题2，加热10分钟。",
+            entities=ExperimentEntities(duration="10分钟"),
+        )
+        answer = CompletedSegment(
+            segment_id=answer.segment_id,
+            asr_result=answer.asr_result,
+            outcome=answer.outcome,
+            error=answer.error,
+            target_clarification_id="segment-2",
+        )
+
+        with redirect_stdout(io.StringIO()):
+            display_completed_segments(
+                [answer],
+                reply_coordinator=coordinator,
+            )
+
+        unresolved = coordinator.active_clarifications()
+        self.assertEqual(len(unresolved), 1)
+        self.assertEqual(unresolved[0].clarification_id, "segment-1")
+
+    def test_explicit_targeted_answer_clears_confirmation(self):
+        coordinator = ReplyCoordinator()
+        raw_text = "将样品放在水域中加热。"
+        event = ExperimentEvent(
+            event_type=ExperimentEventType.OPERATION,
+            raw_text=raw_text,
+            normalized_text="将样品放在水浴中加热。",
+            entities=ExperimentEntities(instrument="水浴"),
+            missing_fields=["temperature", "duration"],
+            needs_confirmation=True,
+            confirmation_reason="水域疑似为水浴",
+            source_session_id="session_001",
+            source_segment_id=1,
+        )
+        coordinator.ingest_analysis(
+            segment_id=1,
+            raw_text=raw_text,
+            analysis=LLMAnalysisResult(
+                events=[event],
+                should_ask_follow_up=True,
+                follow_up_question=(
+                    "请确认是水浴，并补充温度和时间。"
+                ),
+            ),
+        )
+
+        answer = make_completed_segment(
+            segment_id=2,
+            raw_text="问题1，是的，是水浴，60度10分钟。",
+            entities=ExperimentEntities(
+                instrument="水浴",
+                temperature="60摄氏度",
+                duration="10分钟",
+            ),
+        )
+        answer = CompletedSegment(
+            segment_id=answer.segment_id,
+            asr_result=answer.asr_result,
+            outcome=answer.outcome,
+            error=answer.error,
+            target_clarification_id="segment-1",
+            confirms_target_suggestion=True,
+        )
+
+        with redirect_stdout(io.StringIO()):
+            display_completed_segments(
+                [answer],
+                reply_coordinator=coordinator,
+            )
+
+        self.assertEqual(coordinator.active_clarifications(), ())
+
 
 if __name__ == "__main__":
     unittest.main()

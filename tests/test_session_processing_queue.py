@@ -544,6 +544,27 @@ class SessionProcessingQueueTests(
                 segment_id=1,
             )
 
+    def test_completed_segment_keeps_target_clarification_id(self):
+        queue = SessionProcessingQueue(
+            segment_processor=FakeSegmentProcessor(),
+            context=SessionContext(max_events=8),
+        )
+
+        queue.submit(
+            asr_result=make_asr_result(1),
+            session_id="session_006",
+            segment_id=1,
+            target_clarification_id="segment-9",
+            confirms_target_suggestion=True,
+        )
+        completed = queue.finish()
+
+        self.assertEqual(
+            completed[0].target_clarification_id,
+            "segment-9",
+        )
+        self.assertTrue(completed[0].confirms_target_suggestion)
+
     def test_backpressure_waits_when_queue_is_full(
         self,
     ):

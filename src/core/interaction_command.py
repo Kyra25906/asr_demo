@@ -62,6 +62,11 @@ class InteractionCommand:
 class InteractionCommandParser:
     """使用保守、确定性的规则解析交互命令。"""
 
+    # SenseVoice 的 rich_transcription_postprocess 会把识别到的
+    # 情绪标签转换成这些句尾符号。它们不属于用户口述的命令文字，
+    # 因此只在命令匹配副本中移除，raw_text 始终原样保留。
+    SENSEVOICE_TRAILING_EMOTIONS = "😊😔😡😰🤢😮"
+
     END_SESSION_COMMANDS = {
         "结束实验记录",
         "结束记录",
@@ -197,12 +202,20 @@ class InteractionCommandParser:
 
     @staticmethod
     def normalize(text: str) -> str:
-        """仅为命令匹配移除空白和常见标点，原文始终保留。"""
+        """
+        为命令匹配移除空白、常见标点和句尾情绪符号。
 
-        return re.sub(
+        这里只生成匹配副本，不修改需要持久化的 ASR 原文。
+        SenseVoice 的声音事件符号（如掌声、咳嗽）不会被移除。
+        """
+
+        normalized = re.sub(
             r"[\s，。！？、,.!?；;：:]",
             "",
             text,
+        )
+        return normalized.rstrip(
+            InteractionCommandParser.SENSEVOICE_TRAILING_EMOTIONS
         )
 
     @classmethod

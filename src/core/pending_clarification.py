@@ -110,7 +110,7 @@ class PendingClarification:
             self,
             missing_fields=remaining_fields,
             revision=self.revision + 1,
-            reply_pending=True,
+            reply_pending=self.is_active,
             last_updated_segment_id=segment_id,
         )
 
@@ -206,6 +206,6 @@ class PendingClarification:
             self,
             requires_confirmation=False,
             revision=self.revision + 1,
-            reply_pending=True,
+            reply_pending=self.is_active,
             last_updated_segment_id=segment_id,
         )

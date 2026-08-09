@@ -45,6 +45,10 @@ from src.core.session_processing_queue import (
 from src.core.session_context import (
     SessionContext,
 )
+from src.core.targeted_clarification import (
+    TargetedAnswerStatus,
+    resolve_targeted_answer,
+)
 from src.core.state_manager import (
     StateManager,
 )
@@ -329,6 +333,12 @@ def display_completed_segments(
                 segment_id=completed.segment_id,
                 raw_text=completed.asr_result.text,
                 analysis=completed.outcome.value,
+                target_clarification_id=(
+                    completed.target_clarification_id
+                ),
+                confirms_target_suggestion=(
+                    completed.confirms_target_suggestion
+                ),
             )
 
     reply = reply_coordinator.pop_next_reply()
@@ -663,6 +673,66 @@ def run_experiment_session(
                     utterance_count
                 )
 
+                targeted_answer_request = (
+                    resolve_targeted_answer(
+                        asr_result.text,
+                        reply_coordinator=reply_coordinator,
+                    )
+                )
+
+                if (
+                    targeted_answer_request is not None
+                    and targeted_answer_request.status
+                    != TargetedAnswerStatus.READY
+                ):
+                    try:
+                        asr_store.append(
+                            result=asr_result,
+                            session_id=session_id,
+                            segment_id=segment_id,
+                        )
+                    except Exception as error:
+                        print(
+                            "\n指定问题答复保存失败："
+                            f"{type(error).__name__}: {error}"
+                        )
+                        print(
+                            "问题状态没有改变，"
+                            "系统将继续监听。\n"
+                        )
+                        display_completed_segments(
+                            completed_after_asr,
+                            reply_coordinator=reply_coordinator,
+                        )
+                        continue
+
+                    if (
+                        targeted_answer_request.status
+                        == TargetedAnswerStatus.NOT_FOUND
+                    ):
+                        print(
+                            "\n没有找到未解决的问题 "
+                            f"{targeted_answer_request.display_number}。"
+                        )
+                        print(
+                            "请说“查看待确认问题”"
+                            "确认当前编号。\n"
+                        )
+                    else:
+                        print(
+                            "\n请在同一句中说明问题编号和答案。"
+                        )
+                        print(
+                            "例如：“问题 2，"
+                            "水浴温度是 60 摄氏度。”\n"
+                        )
+
+                    display_completed_segments(
+                        completed_after_asr,
+                        reply_coordinator=reply_coordinator,
+                    )
+                    continue
+
                 try:
                     clarification_command_result = (
                         try_handle_clarification_command(
@@ -758,6 +828,16 @@ def run_experiment_session(
                         ),
                         session_id=session_id,
                         segment_id=segment_id,
+                        target_clarification_id=(
+                            targeted_answer_request.clarification_id
+                            if targeted_answer_request is not None
+                            else None
+                        ),
+                        confirms_target_suggestion=(
+                            targeted_answer_request.confirms_suggestion
+                            if targeted_answer_request is not None
+                            else False
+                        ),
                     )
                 )
 

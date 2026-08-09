@@ -40,6 +40,8 @@ class CompletedSegment:
         | None
     )
     error: str | None = None
+    target_clarification_id: str | None = None
+    confirms_target_suggestion: bool = False
 
 
 @dataclass(frozen=True)
@@ -51,6 +53,8 @@ class PendingSegment:
     segment_id: int
     asr_result: ASRResult
     future: Future
+    target_clarification_id: str | None = None
+    confirms_target_suggestion: bool = False
 
 
 class SessionProcessingQueue:
@@ -106,6 +110,8 @@ class SessionProcessingQueue:
         asr_result: ASRResult,
         session_id: str,
         segment_id: int,
+        target_clarification_id: str | None = None,
+        confirms_target_suggestion: bool = False,
     ) -> list[CompletedSegment]:
         """
         提交一段后台处理任务。
@@ -149,6 +155,8 @@ class SessionProcessingQueue:
                 segment_id=segment_id,
                 asr_result=asr_result,
                 future=future,
+                target_clarification_id=target_clarification_id,
+                confirms_target_suggestion=confirms_target_suggestion,
             )
         )
 
@@ -261,6 +269,12 @@ class SessionProcessingQueue:
                 ),
                 outcome=outcome,
                 error=None,
+                target_clarification_id=(
+                    pending.target_clarification_id
+                ),
+                confirms_target_suggestion=(
+                    pending.confirms_target_suggestion
+                ),
             )
 
         except Exception as error:
@@ -275,6 +289,12 @@ class SessionProcessingQueue:
                 error=(
                     f"{type(error).__name__}: "
                     f"{error}"
+                ),
+                target_clarification_id=(
+                    pending.target_clarification_id
+                ),
+                confirms_target_suggestion=(
+                    pending.confirms_target_suggestion
                 ),
             )
 

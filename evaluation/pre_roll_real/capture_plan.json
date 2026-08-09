@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "prompts": [
+    {"sample_id":"pre-roll-defer-01","expected_intent":"defer_current","prompt_text":"这个先跳过。","critical_terms":["这","跳过"]},
+    {"sample_id":"pre-roll-defer-02","expected_intent":"defer_current","prompt_text":"这个先跳过。","critical_terms":["这","跳过"]},
+    {"sample_id":"pre-roll-defer-03","expected_intent":"defer_current","prompt_text":"这个先跳过。","critical_terms":["这","跳过"]},
+    {"sample_id":"pre-roll-review-01","expected_intent":"review_pending","prompt_text":"查看待确认问题。","critical_terms":["查","待确认问题"]},
+    {"sample_id":"pre-roll-review-02","expected_intent":"review_pending","prompt_text":"查看待确认问题。","critical_terms":["查","待确认问题"]},
+    {"sample_id":"pre-roll-review-03","expected_intent":"review_pending","prompt_text":"查看待确认问题。","critical_terms":["查","待确认问题"]},
+    {"sample_id":"pre-roll-skip-01","expected_intent":"defer_current","prompt_text":"跳过这个问题。","critical_terms":["跳","这个问题"]},
+    {"sample_id":"pre-roll-skip-02","expected_intent":"defer_current","prompt_text":"跳过这个问题。","critical_terms":["跳","这个问题"]},
+    {"sample_id":"pre-roll-skip-03","expected_intent":"defer_current","prompt_text":"跳过这个问题。","critical_terms":["跳","这个问题"]}
+  ]
+}

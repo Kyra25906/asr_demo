@@ -52,6 +52,45 @@ class InteractionCommandParserTests(unittest.TestCase):
                     command.requires_clarification_context
                 )
 
+    def test_ignores_sensevoice_trailing_emotion_for_command(self):
+        cases = (
+            (
+                "这个先跳过。😔",
+                InteractionCommandType.DEFER_CURRENT,
+            ),
+            (
+                "查看待确认问题。😊",
+                InteractionCommandType.REVIEW_PENDING,
+            ),
+        )
+
+        for text, expected_type in cases:
+            with self.subTest(text=text):
+                command = InteractionCommandParser.parse(text)
+                self.assertEqual(command.command_type, expected_type)
+                self.assertEqual(command.raw_text, text)
+
+    def test_does_not_ignore_sensevoice_event_prefix(self):
+        command = InteractionCommandParser.parse(
+            "👏查看待确认问题。"
+        )
+        self.assertEqual(
+            command.command_type,
+            InteractionCommandType.NORMAL,
+        )
+
+    def test_does_not_guess_ambiguous_asr_skip_variants(self):
+        for text in (
+            "短线跳过。",
+            "歌先跳过。",
+        ):
+            with self.subTest(text=text):
+                command = InteractionCommandParser.parse(text)
+                self.assertEqual(
+                    command.command_type,
+                    InteractionCommandType.NORMAL,
+                )
+
     def test_does_not_treat_experiment_step_as_defer_command(self):
         for text in (
             "跳过过滤步骤继续加热",

@@ -1,0 +1,1 @@
+{"schema_version":1,"note":"真实混淆证据，只用于评测和候选生成，不得自动覆盖 ASR 原文。","groups":[{"reference":"查看","observed":["看待","在","想看","麻烦"]},{"reference":"这个","observed":["歌","短线","呃"]},{"reference":"离心机","observed":["离婚机","离星期"]},{"reference":"离心","observed":["离析"]},{"reference":"水浴","observed":["水域"]},{"reference":"摄氏度","observed":["设施度"]}]}
