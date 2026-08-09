@@ -1,5 +1,9 @@
 import unittest
 
+from src.core.intent_classifier import (
+    FakeIntentClassifier,
+    IntentCandidate,
+)
 from src.core.intent_policy import (
     IntentDisposition,
     IntentEvidence,
@@ -106,6 +110,118 @@ class IntentRouteResultValidationTests(unittest.TestCase):
                 command=normal_command,
                 decision=end_decision,
             )
+
+
+class IntentRouterClassifierIntegrationTests(unittest.TestCase):
+    def test_exact_command_bypasses_classifier(self):
+        classifier = FakeIntentClassifier(error=AssertionError("不应调用"))
+        router = IntentRouter(classifier=classifier)
+
+        result = router.route("结束实验记录。")
+
+        self.assertEqual(
+            result.decision.disposition,
+            IntentDisposition.EXECUTE,
+        )
+        self.assertFalse(result.classifier_used)
+        self.assertEqual(classifier.requests, [])
+
+    def test_llm_review_candidate_passes_through_risk_policy(self):
+        candidate = IntentCandidate(
+            command_type=InteractionCommandType.REVIEW_PENDING,
+            reason="用户想查看尚未回答的问题。",
+        )
+        classifier = FakeIntentClassifier({
+            "我想看看还有什么没回答。": candidate,
+        })
+        router = IntentRouter(classifier=classifier)
+
+        result = router.route(
+            "我想看看还有什么没回答。",
+            pending_question_numbers=(1, 2),
+            current_question_number=2,
+        )
+
+        self.assertEqual(
+            result.command.command_type,
+            InteractionCommandType.REVIEW_PENDING,
+        )
+        self.assertEqual(
+            result.decision.disposition,
+            IntentDisposition.REQUIRE_CONTEXT,
+        )
+        self.assertEqual(
+            result.decision.evidence,
+            IntentEvidence.LLM_CANDIDATE,
+        )
+        self.assertTrue(result.classifier_used)
+        self.assertEqual(result.candidate_reason, candidate.reason)
+        self.assertEqual(
+            classifier.requests[0].pending_question_numbers,
+            (1, 2),
+        )
+
+    def test_llm_end_candidate_requires_confirmation(self):
+        router = IntentRouter(classifier=FakeIntentClassifier({
+            "今天先记到这里吧。": IntentCandidate(
+                command_type=InteractionCommandType.END_SESSION,
+            ),
+        }))
+
+        result = router.route("今天先记到这里吧。")
+
+        self.assertEqual(
+            result.decision.disposition,
+            IntentDisposition.REQUEST_CONFIRMATION,
+        )
+        self.assertFalse(result.decision.may_execute_now)
+
+    def test_llm_targeted_answer_preserves_target_and_answer(self):
+        router = IntentRouter(classifier=FakeIntentClassifier({
+            "关于第二个，是五分钟。": IntentCandidate(
+                command_type=InteractionCommandType.TARGETED_ANSWER,
+                target_question_number=2,
+                answer_text="五分钟",
+            ),
+        }))
+
+        result = router.route(
+            "关于第二个，是五分钟。",
+            pending_question_numbers=(1, 2),
+        )
+
+        self.assertEqual(result.command.target_question_number, 2)
+        self.assertEqual(result.command.answer_text, "五分钟")
+        self.assertEqual(
+            result.decision.disposition,
+            IntentDisposition.DO_NOT_EXECUTE,
+        )
+
+    def test_llm_normal_candidate_continues_as_experiment_text(self):
+        router = IntentRouter(classifier=FakeIntentClassifier())
+
+        result = router.route("加入五毫升缓冲液。")
+
+        self.assertTrue(result.classifier_used)
+        self.assertTrue(result.is_experiment_text)
+        self.assertIsNone(result.classification_error)
+
+    def test_classifier_timeout_degrades_without_control_action(self):
+        router = IntentRouter(classifier=FakeIntentClassifier(
+            error=TimeoutError("timeout"),
+        ))
+        raw_text = "我想看看还有什么没回答。"
+
+        result = router.route(raw_text)
+
+        self.assertEqual(result.raw_text, raw_text)
+        self.assertTrue(result.is_experiment_text)
+        self.assertTrue(result.classifier_used)
+        self.assertEqual(
+            result.classification_error,
+            "TimeoutError: timeout",
+        )
+        self.assertFalse(result.decision.may_execute_now)
 
 
 if __name__ == "__main__":

@@ -1618,3 +1618,22 @@ ASR回答“系统听见了什么”，意图层回答“用户想让系统做�
 先验证路由顺序和失败降级，不需要立刻花费真实API、等待网络，也不会把接口设计问题误认为模型
 效果问题。本轮首次测试因错误消息措辞不一致失败，统一措辞后补充答复字段越权测试；最终专项
 10项、全量242项通过。下一步用Fake接入IntentRouter，仍不接main和真实DeepSeek。
+
+## 2026-08-09：用Fake跑通“精确优先—模型候选—风险门”
+
+`IntentRouter`现在可以选择注入`IntentClassifier`。路由先调用精确解析器；只要命中正式控制命令，
+就完全跳过分类器。未命中的文本才构造`IntentClassificationInput`，把会话状态和问题编号交给
+Fake，得到`IntentCandidate`后再交给`IntentPolicyEvaluator`。因此模型仍然不能绕过风险策略。
+
+`IntentRouteResult`新增`classifier_used`、`candidate_reason`和`classification_error`。候选原因只用于
+解释模型为什么这样分类，不等于执行依据；错误字段让调用方可以写开发日志。Fake超时时，路由器
+保留raw_text，明确记录`TimeoutError`，并降级为普通实验链路，保证不会因为外部分类器失败而执行
+结束、暂缓或确认写入。后续接main时还要决定这类降级文本怎样标记，避免控制语句污染正式事件。
+
+Fake验证了自然查看进入REQUIRE_CONTEXT、疑似结束进入REQUEST_CONFIRMATION、普通记录继续实验链路。
+LLM识别到“关于第二个，是五分钟”时会保留问题2和答案，但当前策略仍是DO_NOT_EXECUTE；这说明
+“理解出答复”和“允许ReplyCoordinator写记录”还隔着一道目标校验门，尚未完成真实答复闭环。
+
+新增6项集成测试，全量248项通过。下一步实现`LLMIntentClassifier`适配器和严格提示词，先使用Fake
+LLMClient验证，不接main；同时必须记录独立意图调用可能带来的额外延迟，之后再决定是否与实验
+结构化请求合并。
