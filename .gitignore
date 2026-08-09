@@ -18,6 +18,7 @@ results/
 evaluation/pre_roll_real/attempts.jsonl
 evaluation/pre_roll_real/asr_results.jsonl
 evaluation/asr_commands/capture_attempts.jsonl
+evaluation/asr_commands/language_comparison.json
 
 # Downloaded model weights and archives
 models/**
