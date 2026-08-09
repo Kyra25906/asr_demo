@@ -57,7 +57,7 @@ cd C:\Users\dahli\Desktop\asr_demo
 
 ## 3. 当前唯一下一项
 
-> 执行 `INTENT-02-SEMANTIC-01`：定义并实现第一批本地自然表达候选，只覆盖低风险“查看”和可恢复“暂缓”；高风险结束表达仅返回REQUEST_CONFIRMATION，不接main。
+> 执行 `INTENT-02-CLASSIFIER-ROUTE-01`：先用FakeIntentClassifier接入IntentRouter，验证精确规则优先、LLM候选必须经过风险策略、分类失败不执行控制动作；不接真实DeepSeek和main。
 
 真实验收通过前，不继续接按问题编号回答、否定修正或 TTS。
 
@@ -67,7 +67,7 @@ cd C:\Users\dahli\Desktop\asr_demo
 
 | 顺序 | 优先级 | 任务 | 当前状态 | 本轮要得到的结果 | 进入下一项的条件 |
 |---:|---|---|---|---|---|
-| 1 | `P0` | `INTENT-02-SEMANTIC-01` 本地自然表达候选 | `TODO` | 首批只做查看、暂缓及疑似结束；候选必须经过风险策略 | 正常负样本、低风险容错和高风险确认测试通过 |
+| 1 | `P0` | `INTENT-02-CLASSIFIER-ROUTE-01` Fake分类器接路由 | `TODO` | 精确命令不调用分类器；未命中才分类；候选统一经过风险策略 | 普通、低风险、高风险、非法输出和超时降级测试通过 |
 | 2 | `P2` | `ASR-CMD-REC-01` 独立语料采集器真实验收 | `AUTO_OK` | 代码和离线测试已完成；因用户当前不方便录音而后推 | 恢复录音后用正式入口完成24条并验证断点恢复 |
 | 3 | `P0` | `ASR-CMD-01` 新语料真实验收 | `AUTO_OK` | 用户照稿录24条；清单无猜测标签；生成新基线 | WAV、参考文本和识别文本逐条可追溯，基线可重复生成 |
 | 4 | `P2` | `ASR-CMD-02-HOTWORD-01` 固定热词参数对照 | `TODO` | 24条标准语料或Demo专业词确定后再做，不提前给main加热词 | 语料足够且热词候选有明确来源 |
@@ -297,7 +297,9 @@ A负责提供稳定消息协议和Mock数据，不应让前端直接读取 `main
 | `INTENT-01` | `P0` | 定义自然控制表达与风险等级 | `AUTO_OK` | 新增IntentRisk、IntentEvidence、IntentDisposition、IntentPolicy和IntentDecision；7项专项及全量225项通过；精确结束可执行，语义/LLM结束必须确认，LLM不得直接写确认状态；尚未接main |
 | `INTENT-02` | `P0` | 实现 ASR 与实验LLM之间的轻量 IntentRouter | `DESIGN` | 精确路由子步骤已AUTO_OK：IntentRouter组合InteractionCommandParser与IntentPolicyEvaluator，返回不可变IntentRouteResult；7项路由测试、相关30项及全量232项通过；尚未接自然语义、协调器或main |
 | `INTENT-02-EXACT-01` | `P0` | 精确命令统一路由 | `AUTO_OK` | 普通口述进入实验链路；查看/答复进入上下文；精确结束进入执行；保留raw_text和答复编号；自然表达不猜测；7项专项通过 |
-| `INTENT-02-SEMANTIC-01` | `P0` | 第一批本地自然表达候选 | `TODO` | 只覆盖低风险查看、可恢复暂缓和疑似结束；结束候选必须REQUEST_CONFIRMATION；先单测，不接main |
+| `INTENT-02-CLASSIFIER-01` | `P0` | 定义LLM意图分类接口和候选结构 | `AUTO_OK` | 新增IntentClassificationInput、IntentCandidate、IntentClassifier协议、FakeIntentClassifier及IntentClassifierError；严格拒绝缺失/额外/越权字段；10项专项、全量242项通过；未调用真实LLM |
+| `INTENT-02-CLASSIFIER-ROUTE-01` | `P0` | Fake分类器接入IntentRouter | `TODO` | 精确规则优先；未命中才调用分类器；IntentCandidate只能作为LLM_CANDIDATE进入风险策略；失败不得执行控制动作 |
+| `INTENT-02-SEMANTIC-01` | `P3` | 本地自然表达穷举 | `TODO` | 不作为当前主线；仅在未来有离线、低延迟或特定短语需求时补充，不能要求用户背命令语料 |
 | `MODEL-LOAD-01` | `P1` | ASR 和唤醒模型在进程内只加载一次 | `REAL_OK` | 当前 `main()` 启动时创建一次并跨会话复用 |
 | `MODEL-LOAD-02` | `P2` | 固定FunASR模型修订并关闭不必要的启动更新检查 | `TODO` | 2026-08-08烟雾测试仍访问ModelScope master并检查/下载文件；需验证缓存和断网启动 |
 | `AUDIO-PREROLL-01` | `P0` | 录音句首预缓冲 | `DESIGN` | 缓冲、时间线、组装和VadAudioRecorder假设备接入已完成；仍需“这/查/跳”各3次真实WAV回听与ASR分离验收 |
@@ -540,6 +542,7 @@ Word/PDF 属于表现层增强，可以在系统 TTS 之后完成。
 | 2026-08-09 | 纠正环境误判并完成固定中文参数真实对照 | Python3.11全量218项通过；比较工具8项通过 | `.venv`始终正常，先前为沙箱执行限制；14条WAV结果为auto文本8/14、意图9/14，zh文本8/14、意图10/14，但存在文本回退 | 先做错误归因和`INTENT-01`，热词后推 |
 | 2026-08-09 | 定义统一意图风险与执行边界 | 新增7项专项测试；全量225项通过 | 纯策略层不需要麦克风；未接main且未启用语义或LLM候选 | `P0 INTENT-02`第一步连接精确解析与策略决策 |
 | 2026-08-09 | 完成精确IntentRouter | 新增7项路由测试；路由/策略/解析器相关30项、全量232项通过 | 不需要真实麦克风；自然表达仍保守返回normal；未接协调器和main | `P0 INTENT-02-SEMANTIC-01`第一批本地自然表达候选 |
+| 2026-08-09 | 定义LLM意图分类接口与严格候选结构 | 新增10项专项测试；全量242项通过 | Fake实现不调用外部服务；模型候选无执行权，非法/越权JSON被拒绝 | `P0 INTENT-02-CLASSIFIER-ROUTE-01`先用Fake接路由 |
 
 ## 7. 每轮结束时必须更新
 
