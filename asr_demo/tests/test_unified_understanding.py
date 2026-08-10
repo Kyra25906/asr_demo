@@ -146,6 +146,53 @@ class UnifiedUnderstandingContractTests(unittest.TestCase):
                 "uncertain": None,
             })
 
+    def test_rejects_missing_fields_without_follow_up(self):
+        analysis = analysis_payload()
+        analysis["events"][0]["missing_fields"] = [
+            "temperature", "duration",
+        ]
+        with self.assertRaisesRegex(
+            UnifiedUnderstandingError,
+            "追问标志",
+        ):
+            parse({
+                "input_kind": "experiment",
+                "experiment": {"analysis": analysis},
+                "control": None,
+                "uncertain": None,
+            })
+
+    def test_rejects_confirmation_need_without_follow_up(self):
+        analysis = analysis_payload()
+        event = analysis["events"][0]
+        event["needs_confirmation"] = True
+        event["confirmation_reason"] = "名称可能识别错误。"
+        with self.assertRaisesRegex(
+            UnifiedUnderstandingError,
+            "追问标志",
+        ):
+            parse({
+                "input_kind": "experiment",
+                "experiment": {"analysis": analysis},
+                "control": None,
+                "uncertain": None,
+            })
+
+    def test_rejects_follow_up_without_event_reason(self):
+        analysis = analysis_payload()
+        analysis["should_ask_follow_up"] = True
+        analysis["follow_up_question"] = "请补充信息。"
+        with self.assertRaisesRegex(
+            UnifiedUnderstandingError,
+            "追问标志",
+        ):
+            parse({
+                "input_kind": "experiment",
+                "experiment": {"analysis": analysis},
+                "control": None,
+                "uncertain": None,
+            })
+
     def test_format_failure_can_degrade_to_unclassified_note(self):
         result = build_degraded_understanding(
             raw_text=RAW_TEXT,
