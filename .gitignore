@@ -1,0 +1,27 @@
+# Local secrets and config (DO NOT COMMIT)
+.env
+.claude/
+
+# Python virtual environments
+.venv/
+.venv-*/
+__pycache__/
+*.py[cod]
+
+# User recordings and session data (DO NOT COMMIT)
+audio/
+results/
+models/
+evaluation/
+
+# Orphaned directories from old project structure (keep gitignored)
+src/
+scripts/
+tests/
+pre/
+
+# Editor and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
