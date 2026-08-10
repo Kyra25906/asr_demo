@@ -1,110 +1,152 @@
-# 2026-08-09 开发接手说明
+# asr_demo 当前工作区交接说明
 
-## 1. 明日唯一目标
+最后整理：2026-08-10
 
-完成 `ASR-CMD-01` 的第一小步：建立控制意图文本语料、真实音频清单和当前 SenseVoice 基线报告。
+## 1. 当前唯一下一项
 
-本轮只测量当前系统，不调整 ASR 参数、不增加模糊命令白名单、不接入 IntentRouter、不重构消息输出。
+执行 `INTENT-02-UNIFIED-PROMPT-MISSING-FIELDS-01`：把旧实验 Prompt 中“操作缺少对当前实验有意义的体积、浓度、温度或时间时登记 `missing_fields`”迁入统一 Prompt。
 
-## 2. 当前可靠基线
+本轮只调整统一 Prompt 的能力说明、Prompt 合同测试和固定 Fake 回归。自动测试通过后，按教学约定主动使用真实 DeepSeek 复验“将溶液加热”，目标影子摘要为：
+
+```text
+missing_fields=('temperature', 'duration')
+follow_up_required=True
+clarification_action=create
+```
+
+`create` 仍只是计划，不得提交到 `ReplyCoordinator`。
+
+## 2. 可复现基线
 
 - 真实项目：`C:\Users\dahli\Desktop\asr_demo`
 - 正式解释器：`.venv` 中的 Python 3.11.9
-- 全量自动测试：`130 tests OK`
-- 最近真实会话：`20260808_185630`
-- `CLARIFY-TARGET-01`：`REAL_OK`，编号答复成功只解决问题2并保留问题1
-- 已知核心问题：“看待确认问题”等ASR错误会绕过精确命令解析，进入实验LLM并产生伪NOTE/伪追问
+- 全量自动测试：`392 tests OK`（2026-08-10重新运行）
+- 当前 Git 分支：`main`
+- 当前远程：`origin = https://github.com/Kyra25906/asr_demo.git`
+- 工作区存在累计未提交修改，不得覆盖、回退或把无关文件混入清理。
 
-## 3. 开始前命令
+恢复命令：
 
 ```powershell
 cd C:\Users\dahli\Desktop\asr_demo
-
 .\.venv\Scripts\python.exe --version
-
-.\.venv\Scripts\python.exe -B -m unittest discover `
-    -s tests `
-    -v
-
+.\.venv\Scripts\python.exe -B -m unittest discover
 git status --short
+git diff --check
 ```
 
-预期 Python 为 `3.11.9`，全量测试为 `130 tests OK`。工作区存在今天尚未提交的环境恢复、命令兼容、编号回答、测试和文档修改，不得覆盖或回退。
+## 3. 已完成的主要能力
 
-## 4. 建议新增结构
+### ASR与证据
+
+- ASR 后端改为 Protocol＋Factory＋SenseVoice 适配器，业务代码不再绑定具体模型类。
+- `ASRResult` schema v2 区分模型原始文本、忠实转写和后续纠错候选。
+- 历史 schema v1 可只读兼容，真实结果文件不迁移、不覆盖。
+- 24条控制语料真实采集与基线已经完成；专业词后处理仅为评测候选，尚未接入主流程。
+
+### 统一理解与安全分派
+
+- 精确控制命令走本地快速路径，未命中文本最多进入一次统一理解调用。
+- 统一理解严格使用 experiment/control/uncertain 三分支合同。
+- 安全分派固定目标与最小权限，不直接产生副作用。
+- 执行请求绑定 request/session/segment、最终 ASR 证据、目标和权限，并有幂等 Fake 验收。
+
+### 采用合同
+
+- 实验候选经过来源、原文、目标、权限和降级形状检查后，才生成不可变规范快照。
+- 待确认动作被建模为 create/review/defer/answer/confirm/reject_suggestion/no_action。
+- PREPARE_CREATE/PREPARE_UPDATE 只表示准备动作，没有 commit 方法。
+- LLM 中风险状态候选不能直接修改问题；降级 NOTE 不能制造正式问题。
+
+### main影子模式
+
+- `UNIFIED_SHADOW_ENABLED` 默认 false；本机 `.env` 当前为真实测试临时开启状态，提交时 `.env` 不进入 Git。
+- 影子链读取同一最终 ASR 证据和只读待确认快照。
+- 影子摘要只显示目标、权限、采用类型、缺失字段、追问标志和动作类型。
+- 影子不写业务文件、不改 SessionContext/ReplyCoordinator、不发 TTS；异常只产生失败摘要，旧流程继续。
+
+## 4. 最近真实验收
+
+### main影子接入
+
+- 会话：`20260810_120209`
+- 前3段真实进入 experiment_pipeline/structured_experiment，影子明确“未执行”。
+- 结束候选进入旁路未开放目标后安全失败，旧流程继续，证明失败隔离。
+
+### 结束命令单一来源
+
+- 真实问题：“接受实验记录。😔”被旧 main 当作 NOTE。
+- 已删除 main 独立结束字典/正则，统一委托 `InteractionCommandParser`。
+- 修改后短真实会话中，ASR业务记录保持186条、事件保持133条，结束口述没有进入分段、LLM或存储。
+- 状态：`REAL_OK`。
+
+### 新旧追问差异
+
+- 会话：`20260810_180242`
+- 真实 ASR：“将溶液加热。”
+- 旧链：`missing_fields=[temperature, duration]`，生成追问。
+- 新统一链及保存证据重放：`missing_fields=()`、`follow_up_required=False`、`no_action`。
+- 根因不是合同矛盾：统一 Prompt 缺少“何时登记缺失字段”的业务能力规则。
+
+## 5. 当前工作区构成
+
+累计修改大致分为：
 
 ```text
-evaluation/
-  asr_commands/
-    intents.json
-    manifest.jsonl
-    confusion_terms.json
-    README.md
-scripts/
-  evaluate_asr_commands.py
-tests/
-  test_asr_command_evaluation.py
+src/asr/              后端抽象与证据schema
+src/core/             统一理解、分派、执行、采用、影子合同
+src/llm/              统一Processor与Router
+src/evaluation/       控制语料基线与术语后处理对照
+scripts/              Fake/真实旁路及评测入口
+tests/                每个新增边界的专项和集成测试
+docs/                 任务清单、交接和学习记录
 ```
 
-新增目录和文件后必须在任务清单及当轮交付中明确报告。
+本机数据边界：
 
-## 5. 四种数据的职责
+- `.env`：忽略，包含本机配置/密钥，不提交。
+- `audio/recordings/`：忽略，真实录音不提交。
+- `results/`：忽略，真实会话数据不提交。
+- `.venv*`、模型下载缓存：忽略，不提交。
+- `audio/wav/`：仓库已有固定非敏感测试样本，保持跟踪。
+- `evaluation/asr_commands/` 中的计划、人工基线和清单可跟踪；采集尝试与生成报告已忽略。
 
-### intents.json
+## 6. 仍未开放的能力
 
-定义自然表达、预期意图和风险等级，例如 `review_pending`、`defer_current`、`end_session`、`targeted_answer`。不要只写固定口令，也要写“还有什么没回答”“这个先放着”等自然表达。
+- 新统一链尚未接管旧 SegmentProcessor 或真实存储。
+- ClarificationAction 尚未提交到 ReplyCoordinator。
+- 结束会话副作用尚未通过统一执行器开放；main仍在正式本地Parser命中后直接结束。
+- 热词候选模型尚未验证或切换。
+- 专业词后处理尚未接入主链。
+- Presentation/TTS 尚未接入。
+- 未提交、未推送、未创建 PR。
 
-### manifest.jsonl
+## 7. 提交前整理门
 
-每行对应一个真实WAV，至少包含：`sample_id`、`audio_path`、`reference_text`、`observed_asr_text`、`expected_intent`、`session_id`、`critical_terms`。第一版优先引用现有 `audio/recordings`，不要复制或修改原音频。
+当前分支是 `main`，且累计改动较多。提交到新总仓前必须：
 
-### confusion_terms.json
+1. 确认目标远程地址，不把改动误推到当前 `origin`。
+2. 新建 `codex/` 前缀工作分支，不在 `main` 提交。
+3. 复核 `git status --short`，只暂存源码、测试、脚本和文档。
+4. 确认 `.env`、录音、结果、模型、虚拟环境没有进入暂存区。
+5. 运行 `392+` 全量测试与 `git diff --check`。
+6. 按能力边界拆分提交；不要把全部累计修改压成无法审查的一次提交。
+7. 推送前检查远程和分支名；未经用户明确要求不提交、不推送。
 
-记录真实观察到的混淆，例如离心机/离婚机/离星期、水浴/水域、摄氏度/设施度、查看/看待。它是评测和候选生成数据，不是自动覆盖原文的替换表。
-
-### evaluate_asr_commands.py
-
-第一版读取清单并输出静态基线，不重新调用真实模型也可以。至少统计：样本数、ASR精确文本命中率、当前确定性解析器的意图命中率、控制命令漏触发数、普通内容误触发数。输出应可被单元测试验证。
-
-## 6. 第一批真实证据
-
-优先从以下会话对应WAV和JSONL选择样本：
-
-- `20260808_141435`：歌先跳过、短线跳过、带情绪符号的暂缓/回看
-- `20260808_144408`：我先跳过、想看待确认问题、可先跳过
-- `20260808_183942`：麻烦待确认问题、待确认问题、编号回答
-- `20260808_185630`：看待确认问题、问题二明确回答、结束实验记录
-
-必须由用户实际说法作为 `reference_text`。如果日志只能证明ASR结果、不能确定用户原话，就标记 `reference_status=needs_user_label`，不得自行猜测。
-
-## 7. 验收顺序
-
-1. 先为语料数据结构和统计函数写单元测试。
-2. 再填入少量可确认的真实样本。
-3. 运行评测脚本生成当前基线。
-4. 核对正常路径：正确命令能命中。
-5. 核对边界：文本错误但意图仍可能正确。
-6. 核对失败路径：缺失音频或非法意图应明确报错，不静默跳过。
-7. 最后运行全量测试，并更新 `PROJECT_TASK_CHECKLIST.md` 和学习日志。
-
-## 8. 本轮故意不做
-
-- 不训练或微调SenseVoice。
-- 不先假设热词一定有效。
-- 不把所有观察到的错词加入命令白名单。
-- 不让LLM直接执行结束、删除等高风险操作。
-- 不接TTS。
-- 不一次迁移main中的所有print。
-
-## 9. 后续顺序
+建议提交分组：
 
 ```text
-ASR-CMD-01 语料与基线
-→ ASR-CMD-02 同数据对比中文参数/热词/二次识别
-→ INTENT-01/02 自然表达与风险分层IntentRouter
-→ PRESENT-INTEGRATE-01 轻量消息链路接入
-→ 否定修正、会话总结、SessionRecord和Markdown/JSON导出
-→ TTS
+1. ASR后端抽象＋ASR证据schema v2
+2. 控制语料基线＋术语后处理评测
+3. 统一理解Prompt/Processor/Router
+4. 安全分派＋执行请求合同
+5. 实验/待确认采用合同＋集成旁路
+6. main影子模式＋结束命令单一来源
+7. 任务清单、交接与学习日志
 ```
 
-消息层的既定边界是：业务消息描述内容和抽象输出要求；Presenter决定此刻是否送达；前端/TTS适配器决定颜色、布局、音色、语速和具体情感参数。当前只保留这个设计，不在ASR评测轮实现。
+## 8. 教学与真实验收约定
+
+每轮按“目的、技术路线、设计原因、实现功能、本轮知识、验收方法、下一步建议”讲解。
+
+修改触及麦克风、真实 ASR、真实 LLM、持久化或主流程时，自动测试通过后必须主动安排真实环境验收；验收前说明输入、数据外发范围、观察指标和成功/失败标准，验收后用终端、文件计数、会话编号等证据更新状态。历史单次外发授权不能自动扩大。

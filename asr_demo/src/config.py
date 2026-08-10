@@ -79,9 +79,36 @@ DTYPE = "float32"
 # ASR 配置
 # ==================================================
 
-ASR_MODEL = "iic/SenseVoiceSmall"
+ASR_BACKEND = os.getenv(
+    "ASR_BACKEND",
+    "sensevoice",
+).strip().lower()
+
+ASR_SENSEVOICE_MODEL = os.getenv(
+    "ASR_SENSEVOICE_MODEL",
+    "iic/SenseVoiceSmall",
+).strip()
+
+# 暂时保留旧名称，避免外部脚本在迁移期间中断。
+ASR_MODEL = ASR_SENSEVOICE_MODEL
 VAD_MODEL = "fsmn-vad"
 DEVICE = "cpu"
+
+
+def read_bool(variable_name: str, default: str = "false") -> bool:
+    """严格读取布尔开关，避免拼写错误意外开放功能。"""
+
+    raw_value = os.getenv(variable_name, default).strip().lower()
+    if raw_value in {"true", "1", "yes", "on"}:
+        return True
+    if raw_value in {"false", "0", "no", "off"}:
+        return False
+    raise RuntimeError(
+        f"{variable_name} 必须是 true 或 false，当前值为：{raw_value!r}"
+    )
+
+
+UNIFIED_SHADOW_ENABLED = read_bool("UNIFIED_SHADOW_ENABLED")
 
 
 # ==================================================

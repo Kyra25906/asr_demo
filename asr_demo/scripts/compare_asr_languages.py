@@ -56,12 +56,14 @@ def compare_languages(
                 language=language,
             )
             candidate_row = deepcopy(source_row)
-            candidate_row["observed_asr_text"] = result.text
+            candidate_row["observed_asr_text"] = (
+                result.asr_transcript
+            )
             candidate_rows.append(candidate_row)
             recognitions.append({
                 "sample_id": source_row["sample_id"],
-                "text": result.text,
-                "raw_text": result.raw_text,
+                "text": result.asr_transcript,
+                "raw_text": result.asr_model_raw_text,
                 "recognition_seconds": result.recognition_seconds,
             })
 
@@ -86,7 +88,7 @@ def compare_languages(
 
 def main() -> None:
     # 重型依赖延迟到真实运行入口加载；导入纯比较逻辑时不加载 FunASR。
-    from src.asr.recognizer import SpeechRecognizer
+    from src.asr.factory import create_asr_backend
 
     project_root = Path(__file__).resolve().parents[1]
     default_dir = project_root / "evaluation" / "asr_commands"
@@ -115,7 +117,7 @@ def main() -> None:
     rows = load_manifest(args.manifest)
     report = compare_languages(
         rows,
-        recognizer=SpeechRecognizer(),
+        recognizer=create_asr_backend(),
         languages=languages,
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)

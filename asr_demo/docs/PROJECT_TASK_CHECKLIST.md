@@ -41,9 +41,9 @@ TODO → DESIGN → CODED → AUTO_OK → REAL_OK
 
 ## 2. 当前测试基线
 
-- 全量自动测试：`301 tests OK`（Python 3.11.9，2026-08-10）
-- 最近真实连续口述会话：`20260808_185630`
-- 真实会话已验证：编号回答成功只解决问题2并保留问题1；“看待确认问题”误入实验事件，作为 ASR/意图基线样本。
+- 全量自动测试：`392 tests OK`（Python 3.11.9，2026-08-10）
+- 最近真实连续口述会话：`20260810_180242`
+- 最近真实会话已验证：结束命令不会落入业务记录；“将溶液加热”在旧链会追问温度/时间，新统一链未登记缺失字段，已定位为统一Prompt缺少业务能力规则。早期编号回答与自然命令误识别证据仍保留在完整任务库。
 
 恢复工作时先运行：
 
@@ -57,7 +57,26 @@ cd C:\Users\dahli\Desktop\asr_demo
 
 ## 3. 当前唯一下一项
 
-> 执行 `INTENT-02-UNIFIED-DISPATCH-01`：定义UnifiedRouteResult到实验记录、上下文处理、结束确认或安全弃权的分派合同；先Fake测试，不接main。
+> 执行 `INTENT-02-UNIFIED-PROMPT-MISSING-FIELDS-01`：把旧实验Prompt中“操作缺少有意义的体积、浓度、温度或时间时登记missing_fields”的能力规则迁入统一Prompt，先补Prompt合同和固定Fake测试，再做真实DeepSeek复验；不改变解析/采用合同。
+
+### 这一步用白话怎么理解
+
+用户说“将溶液加热”，只说明了动作，没有说明加热到多少度、持续多久。旧系统知道这两个信息值得追问，新统一系统目前只记录“发生了加热”，没有主动发现缺失项。
+
+这一轮要教会新统一模型一条业务规则：不是所有空字段都要问，但当体积、浓度、温度或时间对当前操作确实有意义且用户没说时，应把字段登记为缺失，并生成一个追问候选。
+
+完成后希望真实终端出现：
+
+```text
+缺失字段=('temperature', 'duration')
+需要追问=True
+待确认动作=create
+未执行
+```
+
+这里的 `create` 仍然只是“准备创建问题”，不会直接改变待确认状态。只有Prompt测试、Fake集成、全量回归和真实DeepSeek复验都通过，才讨论下一层提交适配。
+
+本轮故意不做：不把所有实验字段机械设为必填，不让LLM直接修改问题，不接TTS，不替换旧主链。
 
 真实验收通过前，不继续接按问题编号回答、否定修正或 TTS。
 
@@ -67,11 +86,21 @@ cd C:\Users\dahli\Desktop\asr_demo
 
 | 顺序 | 优先级 | 任务 | 当前状态 | 本轮要得到的结果 | 进入下一项的条件 |
 |---:|---|---|---|---|---|
-| 1 | `P0` | `INTENT-02-UNIFIED-DISPATCH-01` 统一路由结果分派合同 | `TODO` | 明确不同分支允许交给哪个下游模块，分派本身不执行写入 | Fake覆盖实验、上下文、结束确认、弃权和降级；不接main |
-| 2 | `P2` | `ASR-CMD-REC-01` 独立语料采集器真实验收 | `REAL_OK` | 正式入口完成24/24；31次尝试含24次接受、7次重录请求；断点恢复后只补待完成项 | 31个WAV全部存在，24个样本ID各有且只有一条接受记录 |
-| 3 | `P0` | `ASR-CMD-01` 新语料真实验收 | `REAL_OK` | 24条accepted WAV两次真实SenseVoice识别汇总一致 | 文本13/24、精确规则意图11/24；规则覆盖不足13、ASR额外意图漏触发0、普通内容误触发0 |
-| 4 | `P2` | `ASR-CMD-02-HOTWORD-01` 固定热词参数对照 | `BLOCKED` | 当前SenseVoiceSmall不读取模型级hotword参数，不能制造假对照 | 若更换明确支持热词的ASR实现，再用同批WAV单变量复验 |
-| 5 | `P1` | `PRESENT-INTEGRATE-01` 最小消息链路 | `TODO` | 先把一种待确认消息接入PresentationMessage→Presenter | 用户消息、状态日志和开发日志开始分流 |
+| 1 | `P0` | `INTENT-02-UNIFIED-DISPATCH-01` 统一路由结果分派合同 | `AUTO_OK` | 六类无副作用目标与最小权限合同完成 | 10项专项、4项Router→Planner集成及全量332项通过；未接main、存储、协调器或状态机 |
+| 2 | `P0` | `INTENT-02-UNIFIED-DISPATCH-INTEGRATION-01` 固定文本旁路分派集成 | `AUTO_OK` | 模拟ASR证据→真实Router→真实Planner→只读报告形成旁路 | 6项专项、五类脚本烟雾及全量338项通过；无执行依赖、无文件写入 |
+| 3 | `P0` | `INTENT-02-UNIFIED-DISPATCH-WAV-01` 固定WAV真实旁路验收 | `REAL_OK` | 固定WAV→真实ASR→统一路由→安全分派，只输出观察报告 | 18.072秒固定WAV真实识别1.593秒；DeepSeek首次请求成功1.961秒；普通实验只得到experiment_pipeline＋forward_experiment_analysis；全量340项通过，未写业务文件或连接执行模块 |
+| 4 | `P0` | `INTENT-02-DISPATCH-EXECUTION-CONTRACT-01` 分派执行请求/结果合同 | `AUTO_OK` | 将最小权限计划转换为可审计、可拒绝、可防重复的执行请求；仍不实现真实副作用 | 新增10项合同/Fake测试；相关24项、全量350项通过；未接main、存储、状态机或TTS |
+| 5 | `P0` | `INTENT-02-EXPERIMENT-ACCEPTANCE-CONTRACT-01` 实验结果采用合同 | `AUTO_OK` | 验证统一理解的实验候选后形成不可变规范快照，禁止旧SegmentProcessor再次调用LLM | 新增10项采用测试；相关37项、全量360项通过；未写存储或上下文 |
+| 6 | `P0` | `INTENT-02-CLARIFICATION-ACCEPTANCE-01` 待确认动作采用合同 | `AUTO_OK` | 把创建、回答、确认、暂缓、回看和弃权变成目标明确的无副作用动作计划 | 新增13项测试；相关43项、全量373项通过；没有commit方法，未修改ReplyCoordinator |
+| 7 | `P0` | `INTENT-02-ACCEPTANCE-INTEGRATION-01` 固定文本采用链集成 | `AUTO_OK` | Router→Planner→ExecutionRequest→实验/待确认采用器组成一条无副作用链 | 新增9项接线测试；相关59项、全量382项通过；固定文本覆盖实验、创建追问、查看、暂缓、指定回答、LLM中风险弃权和降级；不接main或存储 |
+| 8 | `P0` | `INTENT-02-MAIN-SHADOW-INTEGRATION-01` main影子观察接入 | `REAL_OK` | 新采用链读取main产生的同一份最终ASR证据并输出可比较观察结果 | 自动全量385项；真实会话`20260810_120209`观察4段，3段成功、结束候选1段安全失败且旧流程继续；未写影子业务数据、未改状态、未发TTS。首次怀疑追问合同缺失，后续测试证明合同原有双检验，真实差异最终定位为统一Prompt能力规则遗漏；main命令标准化漂移已修复并REAL_OK |
+| 9 | `P0` | `INTENT-02-FOLLOWUP-INVARIANT-01` 追问跨字段一致性合同 | `AUTO_OK` | `missing_fields`非空或`needs_confirmation=true`时，不能接受`should_ask_follow_up=false`并产生NO_ACTION | 复核发现parse_analysis原本已强制该不变量，采用快照物化时也会再次严格解析；新增5项明确上下游反例测试并补影子missing_fields/follow_up_required摘要；相关25项、全量390项通过。真实会话no_action不能证明矛盾，因为当时未记录新链字段 |
+| 10 | `P0` | `INTENT-02-END-NORMALIZATION-UNIFY-01` 结束命令标准化单一来源 | `REAL_OK` | main与InteractionCommandParser必须复用同一份SenseVoice情绪符号清理和命令集合 | 删除main独立字典/正则，新增情绪尾反例和一致性2项，全量392项；修改后短真实会话直接结束，ASR业务记录保持186、事件保持133，主程序停止且最后记录未变化，证明结束口述未进入分段、影子/旧LLM或存储 |
+| 11 | `P0` | `INTENT-02-SHADOW-FOLLOWUP-OBSERVE-01` 追问字段真实影子复验 | `REAL_OK` | 使用新增脱敏摘要观察新统一链自己的missing_fields与follow_up_required | 会话`20260810_180242`真实ASR正确；新链及保存证据重放均为missing_fields空、follow_up_required=false、NO_ACTION，旧链为temperature/duration并追问；确定差异来自统一Prompt缺少“何时登记缺失字段”的能力规则，不是合同矛盾 |
+| 12 | `P0` | `INTENT-02-UNIFIED-PROMPT-MISSING-FIELDS-01` 统一Prompt缺失字段能力对齐 | `TODO` | 迁移旧Prompt的缺失字段判定规则，保持统一输出合同与安全边界不变 | 先测试Prompt包含业务判定规则，再以“将溶液加热”做真实DeepSeek复验；成功目标是missing_fields包含temperature/duration、follow_up_required=true、动作CREATE但仍未执行 |
+| 13 | `P0` | `ASR-EVIDENCE-CONTRACT-01` ASR与LLM原始证据命名合同 | `REAL_OK` | schema v2区分ASR模型原始文本、忠实转写与纠错候选；生产消费者完成迁移 | 新增10项合同测试、全量318项；182条历史v1只读兼容且哈希不变；真实固定WAV输出v2 |
+| 14 | `P2` | `ASR-CMD-REC-01` 独立语料采集器真实验收 | `REAL_OK` | 正式入口完成24/24；31次尝试含24次接受、7次重录请求；断点恢复后只补待完成项 | 31个WAV全部存在，24个样本ID各有且只有一条接受记录 |
+| 15 | `P1` | `PRESENT-INTEGRATE-01` 最小消息链路 | `TODO` | 先把一种待确认消息接入PresentationMessage→Presenter | 用户消息、状态日志和开发日志开始分流 |
 
 ### 当前路线为什么这样排
 
@@ -295,6 +324,9 @@ A负责提供稳定消息协议和Mock数据，不应让前端直接读取 `main
 | `ASR-CMD-02-LANGUAGE-01` | `P0` | language=auto与固定中文参数对照 | `REAL_OK` | Python3.11运行28次真实识别并生成language_comparison.json；auto文本8/14、意图9/14、漏触发5；zh文本8/14、意图10/14、漏触发4；普通内容误触发均为0；暂不改main |
 | `ASR-CMD-02-HOTWORD-01` | `P2` | 无热词与固定热词参数对照 | `BLOCKED` | FunASR 1.4.1通用AutoModel声明hotword参数，但当前SenseVoiceSmall.inference不读取模型级hotword；直接传参会被kwargs吞掉，无法形成可信单变量对照；待未来换用明确支持热词的ASR模型后复验 |
 | `ASR-CMD-02-POSTPROCESS-01` | `P2` | 固定专业词模糊后处理对照 | `REAL_OK` | 使用24条已保存原始ASR文本、固定目标词移液枪/水浴/滴定管、阈值0.85；只生成候选不覆盖原文；修改4条，目标术语0/4→4/4，严格文本13/24→16/24，意图11/24不变，文本/意图回退均0；新增4项测试、全量301项通过；样本内选词存在过拟合风险，未接main |
+| `ASR-BACKEND-CONTRACT-01` | `P1` | 模型无关ASR后端合同与工厂 | `REAL_OK` | 新增ASRBackend Protocol、SenseVoiceBackend和create_asr_backend；main及三个独立真实脚本不再直接构造具体模型；ASR_BACKEND集中配置且默认sensevoice，未知后端在加载模型前明确拒绝；保留ASRResult、原始模型文本和旧ASR_MODEL兼容名；新增7项Fake/临时WAV测试、ASR下游38项及全量308项通过；通过新工厂真实识别18.072秒固定WAV，模型iic/SenseVoiceSmall、识别1.922秒；尚未实现第二模型 |
+| `ASR-EVIDENCE-CONTRACT-01` | `P0` | ASR、LLM与用户消息原始证据命名合同 | `REAL_OK` | `ASRResult`升级为不可变schema v2：`asr_model_raw_text`保存ASR引擎直接文本字段，`asr_transcript`保存确定性去标签后的忠实可读转写；新写入不再生成含糊的`text/raw_text`键，旧构造与只读属性仅作过渡。新增独立不可变`TranscriptCorrectionCandidate`，源转写与候选必须不同，纠错不能回写证据。`ASRResultStore.load_all()`严格读取v1/v2并保留会话来源，损坏行明确报行号；182条现有v1历史记录全部读取成功且文件SHA-256前后不变。SenseVoice适配器、main、命令/确认处理、评测和真实脚本已迁移到明确字段；测试Fake也改为正式ASRResult而非半对象。新增10项合同/存储测试，专项17项、下游47项、Python3.11全量318项通过；真实18.072秒固定WAV输出schema v2，模型原始文本与忠实转写均非空且不同，识别1.482秒。LLM原始响应仍由现有严格Processor边界管理，本轮未重命名ExperimentEvent或PresentationMessage字段，未批量迁移历史文件 |
+| `ASR-CMD-02-MODEL-CANDIDATE-01` | `P2` | 热词模型候选验证 | `TODO` | 候选优先SeACo/contextual Paraformer；先用源码/能力探针证明推理路径真正读取模型级hotword，再以同一批24条accepted WAV完成SenseVoice原始、SenseVoice＋文本后处理、候选模型无热词、候选模型有热词四组对照；固定热词为移液枪/水浴/滴定管；保留各模型原文并记录模型标识、配置、耗时、峰值内存、目标术语命中、严格文本、意图、普通内容误触发及改善/回退；候选验证不得替换当前模型、不得接main、不得上传WAV/模型权重/逐条本地报告。通过门槛：有热词相对候选无热词目标术语改善，意图和普通句无新增回退，并在独立新增语音上复验；否则保留SenseVoice与后处理方案 |
 | `INTENT-01` | `P0` | 定义自然控制表达与风险等级 | `AUTO_OK` | 新增IntentRisk、IntentEvidence、IntentDisposition、IntentPolicy和IntentDecision；7项专项及全量225项通过；精确结束可执行，语义/LLM结束必须确认，LLM不得直接写确认状态；尚未接main |
 | `INTENT-02` | `P0` | 实现 ASR 与实验LLM之间的轻量 IntentRouter | `DESIGN` | 精确路由子步骤已AUTO_OK：IntentRouter组合InteractionCommandParser与IntentPolicyEvaluator，返回不可变IntentRouteResult；7项路由测试、相关30项及全量232项通过；尚未接自然语义、协调器或main |
 | `INTENT-02-EXACT-01` | `P0` | 精确命令统一路由 | `AUTO_OK` | 普通口述进入实验链路；查看/答复进入上下文；精确结束进入执行；保留raw_text和答复编号；自然表达不猜测；7项专项通过 |
@@ -309,9 +341,20 @@ A负责提供稳定消息协议和Mock数据，不应让前端直接读取 `main
 | `INTENT-02-UNIFIED-PROCESSOR-01` | `P0` | 正式统一提示词与Processor | `AUTO_OK` | 新增可信输入上下文、封闭三分支Prompt和UnifiedUnderstandingProcessor；Fake覆盖experiment/control/uncertain、非法JSON、客户端失败、指标与来源注入；相关15项、全量284项通过；未接真实LLM和main |
 | `INTENT-02-UNIFIED-REAL-01` | `P0` | 正式统一理解真实烟雾 | `REAL_OK` | 固定5条非敏感文本真实验收；首轮实验分支因amount_value返回数字被严格拒绝并安全降级，补充“数值也必须是字符串”后完整复验5/5；均首次成功，耗时1.614～2.441秒；未打印/保存逐条原始响应，未接main |
 | `INTENT-02-UNIFIED-ROUTE-01` | `P0` | 精确快速路径与统一理解模块组合 | `AUTO_OK` | 新增UnifiedUnderstandingRouter和单一路径UnifiedRouteResult；精确控制绕过完整LLM链，未命中才统一理解；自然结束经过风险策略只请求确认，指定回答DO_NOT_EXECUTE；experiment、uncertain、非法JSON、客户端失败和指标均覆盖；新增7项集成测试、全量293项通过；未接main |
-| `INTENT-02-UNIFIED-DISPATCH-01` | `P0` | 统一路由结果分派合同 | `TODO` | 将UnifiedRouteResult显式映射为实验分析、上下文候选、结束确认请求、安全弃权或降级NOTE；只定义数据和Fake分派，不直接修改main状态或调用ReplyCoordinator |
+| `INTENT-02-UNIFIED-DISPATCH-01` | `P0` | 统一路由结果分派合同 | `AUTO_OK` | 新增不可变UnifiedDispatchPlan、UnifiedDispatchDestination、UnifiedDispatchPermission和纯UnifiedDispatchPlanner；六类目标为实验链路、待确认上下文、精确结束执行候选、LLM结束确认、安全弃权、降级NOTE。统一优先规则为：degraded优先隔离、uncertain明确弃权、其余控制服从IntentDisposition、始终原样保留路由输入；目标与最小权限非法组合立即拒绝。Planner无存储、状态机、ReplyCoordinator或TTS依赖，不执行任何副作用；10项专项、4项真实Router→Planner Fake集成、连同既有路由共21项及Python3.11全量332项通过；未接main |
+| `INTENT-02-UNIFIED-DISPATCH-INTEGRATION-01` | `P0` | 固定文本旁路分派集成 | `AUTO_OK` | 新增UnifiedDispatchBypassInput、UnifiedDispatchBypass和只读UnifiedDispatchObservation；只把最终ASRResult.asr_transcript转成UnifiedUnderstandingInput，明确不转发asr_model_raw_text；Router若替换文本立即失败。观察报告只含转写、路由来源、风险、处置、目标、最小权限和指标，不含执行方法或模型标签文本。独立模块脚本使用五类固定Fake结果验证experiment_pipeline、clarification_context、end_session_confirmation、abstention和degraded_note；首次直接脚本启动因Python导入路径失败，改用`python -m scripts.evaluate_unified_dispatch_bypass`成功。新增6项专项、全量338项通过；未访问网络、麦克风或存储，未接main |
+| `INTENT-02-UNIFIED-DISPATCH-WAV-01` | `P0` | 固定WAV真实旁路验收 | `REAL_OK` | 新增独立真实旁路脚本和严格报告字段白名单；2项新测试证明报告不包含ASR模型标签、绝对路径、LLM原始响应或错误详情，真实Processor失败只能进入degraded_note；专项12项、Python3.11全量340项通过。经用户明确授权，固定`03_terms_second.wav`真实SenseVoice转写进入DeepSeek一次：18.072秒音频识别1.593秒，LLM首次成功1.961秒，路由为normal/pass_to_experiment，分派为experiment_pipeline＋forward_experiment_analysis，未降级。未写业务文件、未调用状态机、ReplyCoordinator或TTS；FunASR启动仍检查/刷新模型缓存，继续由MODEL-LOAD-02跟踪 |
+| `INTENT-02-DISPATCH-EXECUTION-CONTRACT-01` | `P0` | 分派执行请求与结果合同 | `AUTO_OK` | 新增不可变DispatchExecutionRequest/Result、DispatchExecutionStatus、DispatchExecutor Protocol和无副作用FakeDispatchExecutor。请求绑定request/session/segment、最终ASRResult和UnifiedDispatchPlan，ASR原文不一致立即拒绝；结果回显身份、目标和最小权限，并把accepted/rejected/failed/no_action与state_changed、persisted、message_ids分开，未接受结果不得声称副作用。Plan和Result复用同一目标→权限规则；Fake可按权限接受/拒绝/失败，重复相同request_id返回同一结果且只计一次，不同请求碰撞同一ID立即拒绝。新增10项测试，相关24项、Python3.11全量350项通过；未接main、存储、状态机、ReplyCoordinator或TTS，因此只到AUTO_OK |
+| `INTENT-02-EXPERIMENT-ACCEPTANCE-CONTRACT-01` | `P0` | 统一理解实验候选采用合同 | `AUTO_OK` | 新增纯ExperimentCandidateAcceptor、不可变AcceptedExperimentAnalysis和STRUCTURED_EXPERIMENT/DEGRADED_EVIDENCE_NOTE用途分类。采用时核对DispatchExecutionRequest、统一理解分支、request/session/segment、ASR忠实转写、每个事件来源、分派目标/权限、降级错误和事件数量；正常实验只从experiment_pipeline采用，degraded_note只能产生一个不改写原文且需确认的NOTE，降级形状即使伪造degraded=false也不能混入正常采用。旧可变LLMAnalysisResult被转换为规范JSON快照，可信source字段不混入模型业务JSON，需要交给旧存储边界时严格解析成全新对象，绝不再次调用LLM。新增10项测试，相关37项、Python3.11全量360项通过；未写事件、ASR或上下文，因此只到AUTO_OK |
+| `INTENT-02-CLARIFICATION-ACCEPTANCE-01` | `P0` | 待确认动作采用合同 | `AUTO_OK` | 新增不可变ClarificationContextSnapshot、ClarificationAction及纯ClarificationActionPlanner。动作分为create/review/defer/answer/confirm/reject_suggestion/no_action，最小权限分为none/read_only/prepare_create/prepare_update；PREPARE只生成带目标clarification_id、display_number和expected_revision的计划，没有commit方法。精确规则查看可只读；暂缓、肯定、否定和指定回答只有目标存在且答案完整时才准备更新；编号不存在、缺答案或无当前问题转为no_action。低风险LLM查看只能只读，所有LLM中风险状态候选即使编号有效也保持abstention/no_action。已采用正常实验的追问可准备CREATE且要求先保存来源ASR；degraded NOTE不创建假问题。新增13项测试，相关43项、Python3.11全量373项通过；未访问或修改ReplyCoordinator、存储、状态机或TTS |
+| `INTENT-02-ACCEPTANCE-INTEGRATION-01` | `P0` | 固定文本完整采用链集成 | `AUTO_OK` | 新增UnifiedAcceptanceBypass，把真实UnifiedUnderstandingRouter、UnifiedDispatchPlanner、DispatchExecutionRequest、ExperimentCandidateAcceptor和ClarificationActionPlanner串成无副作用链，配确定性Fake Processor与只读上下文。9项新增测试覆盖普通实验、实验追问CREATE、精确/LLM查看、精确暂缓、编号回答、LLM中风险弃权、degraded NOTE及请求身份/ASR原文贯穿；相关59项、Python3.11全量382项通过。旁路不持有存储、SessionContext、ReplyCoordinator或TTS，且暂不处理结束会话目标，因此只到AUTO_OK |
+| `INTENT-02-MAIN-SHADOW-INTEGRATION-01` | `P0` | main影子观察接入 | `REAL_OK` | 新增默认关闭的UNIFIED_SHADOW_ENABLED开关、UnifiedShadowObserver和脱敏ShadowObservation；自动3项隔离、相关16项、Python3.11全量385项通过。用户明确授权本次逐条ASR忠实转写发送DeepSeek后开启本机开关，真实会话`20260810_120209`共4段：前三段进入experiment_pipeline/structured_experiment且只观察不执行；第4段精确结束候选进入旁路未开放的结束目标，被转换为ValueError失败摘要，旧流程继续，证明失败隔离生效。影子没有写业务文件、更新SessionContext/ReplyCoordinator或发TTS。真实结果同时发现追问一致性与旧main命令标准化问题，已拆分任务，REAL_OK只表示影子接线和隔离真实成立，不表示新业务判断全部正确 |
+| `INTENT-02-FOLLOWUP-INVARIANT-01` | `P0` | 追问跨字段一致性合同 | `AUTO_OK` | 初步诊断误把旧链保存的missing_fields当成新影子链字段证据。测试优先复核发现src/llm/validation.py原本已计算requires_follow_up，并拒绝三类矛盾：有missing_fields却不追问、needs_confirmation为true却不追问、无任何事件依据却凭空追问；ExperimentCandidateAcceptor生成/物化规范快照时再次调用严格parse_analysis，构成下游复查。新增上游3项、下游2项反例测试，影子摘要新增missing_fields与follow_up_required但不含口述正文；相关25项、Python3.11全量390项通过。下次真实复验可直接区分“未识别缺失字段”和“追问决策矛盾” |
+| `INTENT-02-END-NORMALIZATION-UNIFY-01` | `P0` | 结束命令标准化单一来源 | `REAL_OK` | 真实会话第4段ASR“接受实验记录。😔”复现规则漂移后，删除main独立END_SESSION_COMMANDS和独立正则；兼容入口委托InteractionCommandParser。新增情绪尾反例与一致性2项，相关37项、Python3.11全量392项通过。修改后真实短会话仅说结束命令：Python主程序已停止；asr_segments在测试前后均186条、experiment_events均133条，最后记录仍为上一会话旧记录，证明本次结束口述在segment分配前被截住，没有进入影子/旧LLM或业务存储；任务升级REAL_OK |
+| `INTENT-02-SHADOW-FOLLOWUP-OBSERVE-01` | `P0` | 新链追问字段真实观察 | `REAL_OK` | 真实会话`20260810_180242`的ASR为“将溶液加热。”，业务记录从186增至187、事件从133增至134，结束命令未落库。影子终端与同一保存证据的单独重放一致：experiment_pipeline、structured_experiment、missing_fields=()、follow_up_required=false、clarification_action=no_action；旧链同句提取temperature/duration并生成追问。对比Prompt发现旧版明确规定操作缺少有意义的体积/浓度/温度/时间时登记missing_fields，新统一Prompt只规定missing_fields非空后的追问一致性，因此这是能力规则遗漏，不是跨字段合同失效 |
+| `INTENT-02-UNIFIED-PROMPT-MISSING-FIELDS-01` | `P0` | 统一Prompt缺失字段能力对齐 | `TODO` | 将旧实验Prompt中“操作缺少对当前实验有意义的体积、浓度、温度或时间时写入missing_fields并生成简短追问”迁入统一Prompt。不得把所有字段机械设为必填；仍由语境判断“对当前操作有意义”，解析器继续只负责一致性。先补Prompt文本测试和Fake合法输出回归，再以同一真实句复验目标temperature/duration＋CREATE；影子仍无提交权 |
 | `INTENT-02-LLM-TOKENS-01` | `P2` | 意图分类独立token上限 | `TODO` | 烟雾响应仅约33～50 completion tokens，但当前沿用LLM_MAX_TOKENS=2000；若保留独立调用，应增加较小的专用配置并复验截断 |
-| `INTENT-02-REPLY-GATE-01` | `P1` | LLM答复候选进入ReplyCoordinator前的目标校验 | `TODO` | 当前LLM的AFFIRM/DENY/TARGETED_ANSWER仍为DO_NOT_EXECUTE；必须定义目标存在、唯一或明确编号时的安全放行规则，不能凭候选直接写确认记录 |
+| `INTENT-02-REPLY-GATE-01` | `P1` | LLM答复候选进入ReplyCoordinator前的目标校验 | `TODO` | 由INTENT-02-CLARIFICATION-ACCEPTANCE-01实现其核心安全门；本任务保留为ReplyCoordinator适配与回归验收，确认只有已采用且目标明确的动作能够进入协调器 |
 | `INTENT-02-SEMANTIC-01` | `P3` | 本地自然表达穷举 | `TODO` | 不作为当前主线；仅在未来有离线、低延迟或特定短语需求时补充，不能要求用户背命令语料 |
 | `MODEL-LOAD-01` | `P1` | ASR 和唤醒模型在进程内只加载一次 | `REAL_OK` | 当前 `main()` 启动时创建一次并跨会话复用 |
 | `MODEL-LOAD-02` | `P2` | 固定FunASR模型修订并关闭不必要的启动更新检查 | `TODO` | 2026-08-08烟雾测试仍访问ModelScope master并检查/下载文件；需验证缓存和断网启动 |
@@ -346,8 +389,10 @@ A负责提供稳定消息协议和Mock数据，不应让前端直接读取 `main
 | `QUEUE-02` | `P1` | 单线程顺序保证 | `AUTO_OK` | 队列顺序测试通过 |
 | `QUEUE-03` | `P1` | 最大积压和背压 | `AUTO_OK` | backpressure 测试通过 |
 | `QUEUE-04` | `P1` | 会话结束优雅等待 | `REAL_OK` | 真实结束时等待剩余任务完成 |
+| `SESSION-WORK-CONTRACT-01` | `P1` | 通用会话工作项与完成结果合同 | `TODO` | 当前CompletedSegment绑定旧ProcessOutcome[LLMAnalysisResult]；改为只表达任务身份、类型、完成/拒绝/失败状态和业务载荷，使队列只负责顺序、背压与异常隔离，不猜测所有任务都是旧实验LLM |
 | `CTX-01` | `P1` | 最近事件上下文 | `REAL_OK` | 上下文进入真实提示词，单测通过 |
 | `CTX-02` | `P0` | NOTE 使用 raw_text | `AUTO_OK` | SessionContext 单测通过 |
+| `SESSION-CONTEXT-CONTRACT-01` | `P1` | 结构化会话上下文证据项 | `TODO` | 用不可变ContextEvidenceItem保存来源、证据类型、忠实文本、规范候选、确认与降级状态；给LLM前再格式化为字符串，避免当前deque[str]丢失来源和可信等级 |
 
 ### D. 存储、会话与导出
 
@@ -357,7 +402,9 @@ A负责提供稳定消息协议和Mock数据，不应让前端直接读取 `main
 | `STORE-02` | `P0` | 实验事件 JSONL 保存 | `REAL_OK` | `experiment_events.jsonl` 已核验 |
 | `STORE-03` | `P0` | 事件可追溯到 session/segment | `REAL_OK` | 真实事件 source id 正确 |
 | `STORE-04` | `P1` | LLM 降级元数据保存 | `REAL_OK` | 真实历史日志出现降级 NOTE |
+| `EXPERIMENT-EVIDENCE-CONTRACT-01` | `P1` | 版本化实验事件证据合同 | `TODO` | 为事件记录增加schema_version、严格from_dict、未知字段拒绝、历史兼容读取、request_id、ASR证据引用、生成路径和采用状态；坚持新写新版本、旧读旧版本、不原地覆盖历史 |
 | `SESSION-01` | `P0` | 每次实验使用独立 session_id | `REAL_OK` | 会话编号已进入 ASR/事件记录 |
+| `SESSION-IDENTITY-CONTRACT-01` | `P2` | 会话内身份与编号合同 | `TODO` | 区分request_id、utterance_id、segment_id、experiment_step_id和clarification_id，规定生成者、唯一范围和跨记录引用，解决内部口述编号与用户实验步骤编号混用 |
 | `SESSION-02` | `P1` | 按 session_id 查询完整实验 | `TODO` | 尚无统一查询命令 |
 | `EXPORT-01` | `P1` | 导出单次实验 Markdown/JSON | `TODO` | TTS 前建议完成第一版 |
 | `EXPORT-02` | `P3` | 导出报告文档 | `TODO` | 后期白名单工具功能 |
@@ -569,6 +616,13 @@ Word/PDF 属于表现层增强，可以在系统 TTS 之后完成。
 | 2026-08-09 | 完成24条控制命令真实语料采集 | 24/24 accepted；31次尝试；31个WAV全部存在 | 7次重录请求作为失败证据保留；断点恢复只展示3条未接受样本，补录后每个样本恰有一条accepted | `ASR-CMD-01`后续使用这批固定WAV生成可重复的新基线；音频不上传GitHub |
 | 2026-08-09 | 生成24条新语料真实ASR基线 | 新增4项Fake测试；Python3.11全量297项通过；同参数两次真实运行汇总一致 | 文本13/24、精确规则意图11/24、控制漏触发13、误触发0；13条漏触发全部由精确规则不覆盖自然表达造成，ASR额外意图漏触发0 | 保留统一意图理解路线；专业词“移液枪/水浴/滴定管”等再进入单变量ASR增强对照 |
 | 2026-08-10 | 完成专业词后处理候选对照 | 新增4项Fake测试；Python3.11全量301项通过；24条真实保存文本完成对照 | SenseVoice不支持模型级hotword，任务BLOCKED；后处理候选术语0/4→4/4、文本13/24→16/24、零回退，原文未覆盖 | 不接main；回到`INTENT-02-UNIFIED-DISPATCH-01`安全分派合同 |
+| 2026-08-10 | 新建热词模型候选验证任务 | 仅更新任务合同；沿用全量301项基线 | 新任务`ASR-CMD-02-MODEL-CANDIDATE-01`定义能力探针、四组同源对照、指标与独立语音复验门槛；不把可接收参数误当成模型已消费参数 | 当前唯一主线仍为`INTENT-02-UNIFIED-DISPATCH-01`；候选验证后续独立执行，不换模型、不接main |
+| 2026-08-10 | 完成模型无关ASR后端合同与默认SenseVoice适配 | 新增7项专项、ASR下游38项、Python3.11全量308项通过；新工厂真实识别18.072秒固定WAV，识别耗时1.922秒 | main和真实脚本改由工厂创建后端；统一ASRResult及原始模型文本不变；未知后端提前失败；模型缓存仍在本机且未进入仓库 | `ASR-CMD-02-MODEL-CANDIDATE-01`后续只需新增候选适配器；当前正式主线仍回到`INTENT-02-UNIFIED-DISPATCH-01` |
+| 2026-08-10 | 新建ASR与LLM原始证据命名合同任务 | 仅更新任务合同；沿用全量308项基线 | `ASR-EVIDENCE-CONTRACT-01`明确五层命名、不可覆盖边界和旧JSONL兼容迁移要求；本轮未直接重命名生产字段 | 先完成`INTENT-02-UNIFIED-DISPATCH-01`；随后在固定WAV主链路集成前实施证据合同 |
+| 2026-08-10 | 完成ASR证据schema v2与历史只读兼容 | 新增10项合同测试；专项17项、下游47项、Python3.11全量318项通过 | 182条历史v1记录可读且SHA-256不变；真实18.072秒WAV生成v2，模型原始文本与忠实转写均非空且不同，识别1.482秒 | 回到`INTENT-02-UNIFIED-DISPATCH-01`；之后固定WAV主链路只传`asr_transcript`，不传模型标签或纠错候选 |
+| 2026-08-10 | 完成统一路由结果安全分派合同 | 新增10项Planner专项、4项Router→Planner Fake集成；相关21项、Python3.11全量332项通过 | 纯合同不需要真实麦克风或外部LLM；六类目标及最小权限已固定，分派器没有执行依赖 | `INTENT-02-UNIFIED-DISPATCH-INTEGRATION-01`先做固定输入旁路可观察链路，仍不执行状态写入 |
+| 2026-08-10 | 完成固定文本统一路由安全分派旁路 | 新增6项旁路专项；Python3.11全量338项通过；五类固定脚本烟雾输出符合预期 | Fake ASR/Processor，不代表真实模型效果；报告不含模型原始文本且没有执行依赖 | `INTENT-02-UNIFIED-DISPATCH-WAV-01`使用固定WAV和真实ASR/LLM做旁路验收，仍不接main |
+| 2026-08-10 | 按教学约定整理累计工作区和交接文档 | Python3.11全量392项重新运行通过；compileall与git diff --check通过 | 当前仍在main，origin仍指向Kyra25906/asr_demo；20个已跟踪文件修改及30个新增代码/脚本/测试文件均为累计工作，未删除或提交；.env、真实录音、results、模型和venv保持忽略 | 下一项仍为`INTENT-02-UNIFIED-PROMPT-MISSING-FIELDS-01`；提交总仓前先确认远程、新建非main分支并按能力拆分提交 |
 
 ## 7. 每轮结束时必须更新
 

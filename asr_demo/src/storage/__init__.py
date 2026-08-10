@@ -6,11 +6,13 @@ from src.storage.event_store import (
 )
 from src.storage.result_store import (
     ASRResultStore,
+    StoredASREvidence,
 )
 
 
 __all__ = [
     "ASRResultStore",
+    "StoredASREvidence",
     "ConfirmationStore",
     "ExperimentEventStore",
 ]

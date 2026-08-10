@@ -1,6 +1,6 @@
 # asr_demo 本地运行环境
 
-最后验证：2026-08-08
+最后验证：2026-08-10
 
 ## 1. 统一版本
 
@@ -31,6 +31,14 @@ C:\Users\dahli\AppData\Local\Programs\Python\Python311\python.exe `
 
 复制 `.env.example` 为 `.env`，再填写本地 API Key。`.env` 已由 `.gitignore` 排除。
 
+统一合同影子模式默认关闭：
+
+```text
+UNIFIED_SHADOW_ENABLED=false
+```
+
+只有在明确允许本次最终 ASR 忠实转写发送给 DeepSeek 后，才可在本机 `.env` 临时改为 `true`。该开关不会上传音频，但会让非精确命令额外调用一次统一理解模型；不得把一次真实测试授权视为长期外发授权。
+
 ## 4. 验证环境
 
 ```powershell
@@ -44,11 +52,11 @@ C:\Users\dahli\AppData\Local\Programs\Python\Python311\python.exe `
     -v
 ```
 
-2026-08-08 的已验证基线：
+2026-08-10 的已验证基线：
 
 ```text
 src.main import OK
-Ran 118 tests
+Ran 392 tests
 OK
 VAD模型加载成功
 唤醒词模型加载成功

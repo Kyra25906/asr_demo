@@ -9,7 +9,7 @@ import tempfile
 import winsound
 from pathlib import Path
 
-from src.asr.recognizer import SpeechRecognizer
+from src.asr.factory import create_asr_backend
 from src.audio.vad_recorder import VadAudioRecorder
 from src.config import PROJECT_DIR
 from src.evaluation.command_corpus import (
@@ -139,7 +139,7 @@ def recognize_reviewed_audio() -> None:
     if not accepted:
         raise RuntimeError("没有人工确认完整的WAV，不能进入ASR阶段。")
 
-    recognizer = SpeechRecognizer()
+    recognizer = create_asr_backend()
     results = []
     for record in accepted:
         result = recognizer.recognize(Path(record["audio_path"]))
@@ -147,12 +147,12 @@ def recognize_reviewed_audio() -> None:
             "attempt_id": record["attempt_id"],
             "prompt_text": record["prompt_text"],
             "audio_path": record["audio_path"],
-            "observed_asr_text": result.text,
-            "raw_asr_text": result.raw_text,
+                "observed_asr_text": result.asr_transcript,
+                "raw_asr_text": result.asr_model_raw_text,
         }
         results.append(item)
         print(f"提示：{record['prompt_text']}")
-        print(f"ASR：{result.text}\n")
+        print(f"ASR：{result.asr_transcript}\n")
 
     _atomic_write_jsonl(ASR_RESULTS_FILE, results)
     print(f"ASR派生结果已保存：{ASR_RESULTS_FILE}")
