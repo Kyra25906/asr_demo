@@ -2,7 +2,8 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
-from types import SimpleNamespace
+
+from src.asr.schemas import ASRResult
 
 from src.evaluation.command_corpus_baseline import (
     CaptureBaselineError,
@@ -21,8 +22,14 @@ class FakeRecognizer:
     def recognize(self, audio_path, *, language="auto"):
         self.calls.append((audio_path, language))
         text = self.texts[audio_path.name]
-        return SimpleNamespace(
-            text=text, raw_text=f"raw:{text}", recognition_seconds=0.1
+        return ASRResult(
+            asr_transcript=text,
+            asr_model_raw_text=f"raw:{text}",
+            audio_path=str(audio_path),
+            audio_duration_seconds=1.0,
+            recognition_seconds=0.1,
+            model="fake-asr",
+            language=language,
         )
 
 

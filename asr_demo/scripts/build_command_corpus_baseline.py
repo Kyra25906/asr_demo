@@ -13,14 +13,14 @@ from src.evaluation.command_corpus_plan import CommandCorpusPlan
 
 
 def main() -> None:
-    from src.asr.recognizer import SpeechRecognizer
+    from src.asr.factory import create_asr_backend
 
     project_root = Path(__file__).resolve().parents[1]
     corpus_dir = project_root / "evaluation" / "asr_commands"
     plan = CommandCorpusPlan.load(corpus_dir / "capture_plan.json")
     accepted = load_accepted_attempts(corpus_dir / "capture_attempts.jsonl")
     rows, metrics = build_capture_baseline(
-        plan, accepted, recognizer=SpeechRecognizer(), language="auto"
+        plan, accepted, recognizer=create_asr_backend(), language="auto"
     )
 
     manifest_path = corpus_dir / "captured_manifest.jsonl"
