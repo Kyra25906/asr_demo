@@ -32,7 +32,9 @@ def try_handle_clarification_command(
     才允许修改内存中的问题状态。
     """
 
-    command = InteractionCommandParser.parse(asr_result.text)
+    command = InteractionCommandParser.parse(
+        asr_result.asr_transcript
+    )
 
     if command.command_type not in {
         InteractionCommandType.DEFER_CURRENT,

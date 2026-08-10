@@ -1,5 +1,6 @@
 import unittest
-from types import SimpleNamespace
+
+from src.asr.schemas import ASRResult
 
 from src.core.clarification_command_handler import (
     try_handle_clarification_command,
@@ -26,7 +27,15 @@ class FakeStore:
 
 
 def make_asr_result(text: str):
-    return SimpleNamespace(text=text)
+    return ASRResult(
+        asr_transcript=text,
+        asr_model_raw_text=f"raw:{text}",
+        audio_path="audio/command.wav",
+        audio_duration_seconds=1.0,
+        recognition_seconds=0.1,
+        model="fake-asr",
+        language="zh",
+    )
 
 
 def make_coordinator_with_current_question() -> ReplyCoordinator:
