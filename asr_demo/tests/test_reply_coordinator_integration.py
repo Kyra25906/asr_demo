@@ -1,7 +1,8 @@
 import io
 import unittest
 from contextlib import redirect_stdout
-from types import SimpleNamespace
+
+from src.asr.schemas import ASRResult
 
 from src.core.reply_coordinator import ReplyCoordinator
 from src.core.session_processing_queue import CompletedSegment
@@ -45,16 +46,24 @@ def make_completed_segment(
         llm_attempts=1,
         llm_processing_seconds=0.1,
     )
-    asr_result = SimpleNamespace(
-        text=raw_text,
-        audio_duration_seconds=1.0,
-        recognition_seconds=0.1,
-    )
+    asr_result = make_asr_result(raw_text)
     return CompletedSegment(
         segment_id=segment_id,
         asr_result=asr_result,
         outcome=outcome,
         error=None,
+    )
+
+
+def make_asr_result(text: str) -> ASRResult:
+    return ASRResult(
+        asr_transcript=text,
+        asr_model_raw_text=f"raw:{text}",
+        audio_path="audio/fake.wav",
+        audio_duration_seconds=1.0,
+        recognition_seconds=0.1,
+        model="fake-asr",
+        language="zh",
     )
 
 
@@ -136,11 +145,7 @@ class ReplyCoordinatorIntegrationTests(unittest.TestCase):
         coordinator = ReplyCoordinator()
         failed = CompletedSegment(
             segment_id=1,
-            asr_result=SimpleNamespace(
-                text="原始文本。",
-                audio_duration_seconds=1.0,
-                recognition_seconds=0.1,
-            ),
+            asr_result=make_asr_result("原始文本。"),
             outcome=None,
             error="OSError: 模拟存储失败",
         )

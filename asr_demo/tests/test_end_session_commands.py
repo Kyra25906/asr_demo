@@ -4,6 +4,10 @@ from src.main import (
     is_end_session_command,
     normalize_command,
 )
+from src.core.interaction_command import (
+    InteractionCommandParser,
+    InteractionCommandType,
+)
 
 
 class NormalizeCommandTests(
@@ -148,6 +152,33 @@ class EndSessionCommandTests(
                     is_end_session_command(
                         command
                     )
+                )
+
+    def test_accepts_sensevoice_trailing_emotion(self):
+        """真实ASR句尾情绪标记不属于命令正文。"""
+
+        for command in (
+            "接受实验记录。😔",
+            "结束实验记录😊",
+            "退出实验记录！😮",
+        ):
+            with self.subTest(command=command):
+                self.assertTrue(is_end_session_command(command))
+
+    def test_main_delegates_to_formal_command_parser(self):
+        """main不能再维护一套会漂移的结束命令规则。"""
+
+        cases = tuple(InteractionCommandParser.END_SESSION_COMMANDS) + (
+            "接受实验记录。😔",
+            "结束加热。",
+            "实验结束后清洗仪器。",
+        )
+        for text in cases:
+            with self.subTest(text=text):
+                formal = InteractionCommandParser.parse(text)
+                self.assertEqual(
+                    is_end_session_command(text),
+                    formal.command_type == InteractionCommandType.END_SESSION,
                 )
 
     def test_rejects_operation_end_commands(

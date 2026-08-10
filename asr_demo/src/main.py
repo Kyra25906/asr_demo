@@ -1,9 +1,8 @@
-import re
 import time
 from datetime import datetime
 
-from src.asr.recognizer import (
-    SpeechRecognizer,
+from src.asr.factory import (
+    create_asr_backend,
 )
 from src.audio.feedback import (
     play_wake_tone,
@@ -14,6 +13,7 @@ from src.audio.vad_recorder import (
 from src.config import (
     SESSION_CONTEXT_MAX_EVENTS,
     SESSION_MAX_PENDING_TASKS,
+    UNIFIED_SHADOW_ENABLED,
     WAKEWORD_KEYWORDS_FILE,
     WAKEWORD_MODEL_DIR,
 )
@@ -28,6 +28,7 @@ from src.core.clarification_command_handler import (
     try_handle_clarification_command,
 )
 from src.core.interaction_command import (
+    InteractionCommandParser,
     InteractionCommandType,
 )
 from src.core.pending_clarification import (
@@ -49,6 +50,11 @@ from src.core.targeted_clarification import (
     TargetedAnswerStatus,
     resolve_targeted_answer,
 )
+from src.core.unified_acceptance_bypass import UnifiedAcceptanceBypass
+from src.core.unified_shadow import (
+    ShadowObservationStatus,
+    UnifiedShadowObserver,
+)
 from src.core.state_manager import (
     StateManager,
 )
@@ -67,6 +73,8 @@ from src.llm.processor import (
 from src.storage.event_store import (
     ExperimentEventStore,
 )
+from src.llm.unified_processor import UnifiedUnderstandingProcessor
+from src.llm.unified_router import UnifiedUnderstandingRouter
 from src.storage.confirmation_store import (
     ConfirmationStore,
 )
@@ -80,18 +88,6 @@ from src.wakeword.detector import (
 
 SESSION_IDLE_TIMEOUT_SECONDS = 5 * 60
 
-END_SESSION_COMMANDS = {
-    "结束实验记录",
-    "结束记录",
-    "结束本次实验",
-    "退出实验记录",
-    "结束实验",
-
-    #ASR误识别
-    "接受实验记录",
-}
-
-
 def normalize_command(
     text: str,
 ) -> str:
@@ -100,11 +96,7 @@ def normalize_command(
     便于匹配语音控制指令。
     """
 
-    return re.sub(
-        r"[\s，。！？、,.!?；;：:]",
-        "",
-        text,
-    )
+    return InteractionCommandParser.normalize(text)
 
 
 def is_end_session_command(
@@ -114,14 +106,8 @@ def is_end_session_command(
     判断识别文本是否为结束会话指令。
     """
 
-    normalized_text = (
-        normalize_command(text)
-    )
-
-    return (
-        normalized_text
-        in END_SESSION_COMMANDS
-    )
+    command = InteractionCommandParser.parse(text)
+    return command.command_type == InteractionCommandType.END_SESSION
 
 
 def create_experiment_llm_processor(
@@ -170,6 +156,40 @@ def create_experiment_llm_processor(
     )
 
 
+def create_unified_shadow_observer() -> UnifiedShadowObserver | None:
+    """按显式配置创建只读影子链；默认关闭。"""
+
+    if not UNIFIED_SHADOW_ENABLED:
+        return None
+
+    processor = UnifiedUnderstandingProcessor(create_llm_client())
+    router = UnifiedUnderstandingRouter(processor)
+    print("统一合同影子观察已开启；结果不会接管旧流程。")
+    return UnifiedShadowObserver(UnifiedAcceptanceBypass(router))
+
+
+def display_shadow_observation(observation) -> None:
+    """只显示脱敏摘要，不显示口述或外部错误详情。"""
+
+    if observation.status == ShadowObservationStatus.FAILED:
+        print(
+            f"[新系统影子] 第{observation.segment_id}段观察失败："
+            f"{observation.error_type}；旧流程继续。"
+        )
+        return
+
+    print(
+        f"[新系统影子] 第{observation.segment_id}段："
+        f"目标={observation.destination}，"
+        f"权限={observation.permission}，"
+        f"采用={observation.acceptance_kind or 'none'}，"
+        f"缺失字段={observation.missing_fields or 'none'}，"
+        f"需要追问={observation.follow_up_required}，"
+        f"待确认动作={observation.clarification_action}；"
+        "未执行。"
+    )
+
+
 def recognize_one_segment(
     *,
     recorder,
@@ -214,7 +234,7 @@ def display_segment_result(
     """显示一段口述的 ASR、LLM 结果和运行指标。"""
 
     print(f"\n第 {segment_id} 段识别结果：")
-    print(asr_result.text)
+    print(asr_result.asr_transcript)
 
     print(
         f"音频时长："
@@ -276,7 +296,7 @@ def display_completed_segment(
         )
         print(
             f"原始识别文本："
-            f"{completed.asr_result.text}"
+                f"{completed.asr_result.asr_transcript}"
         )
         print(
             f"失败原因："
@@ -331,7 +351,9 @@ def display_completed_segments(
         ):
             reply_coordinator.ingest_analysis(
                 segment_id=completed.segment_id,
-                raw_text=completed.asr_result.text,
+                raw_text=(
+                    completed.asr_result.asr_transcript
+                ),
                 analysis=completed.outcome.value,
                 target_clarification_id=(
                     completed.target_clarification_id
@@ -418,7 +440,7 @@ def try_handle_confirmation_answer(
         reply_coordinator
         .prepare_confirmation(
             segment_id=segment_id,
-            raw_text=asr_result.text,
+        raw_text=asr_result.asr_transcript,
         )
     )
 
@@ -527,6 +549,7 @@ def run_experiment_session(
     asr_store: ASRResultStore,
     confirmation_store: ConfirmationStore,
     state_manager: StateManager,
+    shadow_observer: UnifiedShadowObserver | None = None,
 ) -> None:
     """
     运行一次完整实验会话。
@@ -639,7 +662,7 @@ def run_experiment_session(
                     "\n本段 ASR 识别完成："
                 )
                 print(
-                    asr_result.text
+                asr_result.asr_transcript
                 )
 
                 # ASR 期间后台任务可能已经完成。
@@ -652,7 +675,7 @@ def run_experiment_session(
                 # 结束命令不写入 ASR 文件，
                 # 也不发送给 LLM。
                 if is_end_session_command(
-                    asr_result.text
+                asr_result.asr_transcript
                 ):
                     print(
                         "\n检测到结束指令，"
@@ -673,9 +696,19 @@ def run_experiment_session(
                     utterance_count
                 )
 
+                if shadow_observer is not None:
+                    observation = shadow_observer.observe(
+                        request_id=f"shadow-{session_id}-{segment_id}",
+                        session_id=session_id,
+                        segment_id=segment_id,
+                        asr_result=asr_result,
+                        reply_coordinator=reply_coordinator,
+                    )
+                    display_shadow_observation(observation)
+
                 targeted_answer_request = (
                     resolve_targeted_answer(
-                        asr_result.text,
+                    asr_result.asr_transcript,
                         reply_coordinator=reply_coordinator,
                     )
                 )
@@ -1003,9 +1036,11 @@ def main() -> None:
         )
     )
 
+    shadow_observer = create_unified_shadow_observer()
+
     # ASR 模型只在程序启动时
     # 加载一次。
-    recognizer = SpeechRecognizer()
+    recognizer = create_asr_backend()
 
     # 唤醒模型也只在程序启动时
     # 加载一次。
@@ -1058,6 +1093,7 @@ def main() -> None:
                 state_manager=(
                     state_manager
                 ),
+                shadow_observer=shadow_observer,
             )
 
         except Exception as error:

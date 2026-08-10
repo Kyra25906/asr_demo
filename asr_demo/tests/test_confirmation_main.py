@@ -1,5 +1,6 @@
 import unittest
-from types import SimpleNamespace
+
+from src.asr.schemas import ASRResult
 
 from src.core.reply_coordinator import ReplyCoordinator
 from src.llm.schemas import (
@@ -22,9 +23,14 @@ class FakeStore:
 
 
 def make_asr_result(text: str):
-    return SimpleNamespace(
-        text=text,
+    return ASRResult(
+        asr_transcript=text,
+        asr_model_raw_text=f"raw:{text}",
         audio_path="audio/answer.wav",
+        audio_duration_seconds=1.0,
+        recognition_seconds=0.1,
+        model="fake-asr",
+        language="zh",
     )
 
 

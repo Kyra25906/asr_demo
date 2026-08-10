@@ -100,7 +100,7 @@ class SegmentProcessor:
         outcome = (
             self.llm_processor
             .analyze_segment(
-                raw_text=asr_result.text,
+                raw_text=asr_result.asr_transcript,
                 session_id=session_id,
                 segment_id=segment_id,
                 context=prompt_context,
@@ -147,7 +147,7 @@ class SegmentProcessor:
                 "segment_id 必须大于 0。"
             )
 
-        if not asr_result.text.strip():
+        if not asr_result.asr_transcript.strip():
             raise ValueError(
                 "ASR 识别文本不能为空。"
             )
