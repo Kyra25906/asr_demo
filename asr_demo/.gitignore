@@ -3,6 +3,7 @@
 evaluation/asr_commands/capture_attempts.jsonl
 evaluation/asr_commands/captured_manifest.jsonl
 evaluation/asr_commands/captured_baseline.json
+evaluation/asr_commands/term_postprocess_comparison.json
 
 # Python environments and caches
 .venv/

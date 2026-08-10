@@ -1,6 +1,6 @@
 # asr_demo 项目任务清单
 
-最后更新：2026-08-09
+最后更新：2026-08-10
 
 真实项目：`C:\Users\dahli\Desktop\asr_demo`
 
@@ -41,7 +41,7 @@ TODO → DESIGN → CODED → AUTO_OK → REAL_OK
 
 ## 2. 当前测试基线
 
-- 全量自动测试：`297 tests OK`（Python 3.11.9，2026-08-09）
+- 全量自动测试：`301 tests OK`（Python 3.11.9，2026-08-10）
 - 最近真实连续口述会话：`20260808_185630`
 - 真实会话已验证：编号回答成功只解决问题2并保留问题1；“看待确认问题”误入实验事件，作为 ASR/意图基线样本。
 
@@ -70,7 +70,7 @@ cd C:\Users\dahli\Desktop\asr_demo
 | 1 | `P0` | `INTENT-02-UNIFIED-DISPATCH-01` 统一路由结果分派合同 | `TODO` | 明确不同分支允许交给哪个下游模块，分派本身不执行写入 | Fake覆盖实验、上下文、结束确认、弃权和降级；不接main |
 | 2 | `P2` | `ASR-CMD-REC-01` 独立语料采集器真实验收 | `REAL_OK` | 正式入口完成24/24；31次尝试含24次接受、7次重录请求；断点恢复后只补待完成项 | 31个WAV全部存在，24个样本ID各有且只有一条接受记录 |
 | 3 | `P0` | `ASR-CMD-01` 新语料真实验收 | `REAL_OK` | 24条accepted WAV两次真实SenseVoice识别汇总一致 | 文本13/24、精确规则意图11/24；规则覆盖不足13、ASR额外意图漏触发0、普通内容误触发0 |
-| 4 | `P2` | `ASR-CMD-02-HOTWORD-01` 固定热词参数对照 | `TODO` | 24条标准语料或Demo专业词确定后再做，不提前给main加热词 | 语料足够且热词候选有明确来源 |
+| 4 | `P2` | `ASR-CMD-02-HOTWORD-01` 固定热词参数对照 | `BLOCKED` | 当前SenseVoiceSmall不读取模型级hotword参数，不能制造假对照 | 若更换明确支持热词的ASR实现，再用同批WAV单变量复验 |
 | 5 | `P1` | `PRESENT-INTEGRATE-01` 最小消息链路 | `TODO` | 先把一种待确认消息接入PresentationMessage→Presenter | 用户消息、状态日志和开发日志开始分流 |
 
 ### 当前路线为什么这样排
@@ -293,7 +293,8 @@ A负责提供稳定消息协议和Mock数据，不应让前端直接读取 `main
 | `ASR-CMD-REC-CLI-01` | `P0` | 正式独立命令行采集入口 | `AUTO_OK` | 可恢复会话运行器5项测试；正式--status烟雾测试显示0/24及尝试号；入口复用计划/协调器/存储；全量215项通过 |
 | `ASR-CMD-02` | `P0` | 使用固定命令集比较 ASR 增强方案 | `DESIGN` | 固定中文参数真实对照已完成，未显示无代价全面改善；下一步比较热词；同一批音频一次只改一个变量 |
 | `ASR-CMD-02-LANGUAGE-01` | `P0` | language=auto与固定中文参数对照 | `REAL_OK` | Python3.11运行28次真实识别并生成language_comparison.json；auto文本8/14、意图9/14、漏触发5；zh文本8/14、意图10/14、漏触发4；普通内容误触发均为0；暂不改main |
-| `ASR-CMD-02-HOTWORD-01` | `P2` | 无热词与固定热词参数对照 | `TODO` | 后推到24条标准语料完成或Demo专业词确定后；必须报告改善与回退，不做原文覆盖式替换，不直接接main |
+| `ASR-CMD-02-HOTWORD-01` | `P2` | 无热词与固定热词参数对照 | `BLOCKED` | FunASR 1.4.1通用AutoModel声明hotword参数，但当前SenseVoiceSmall.inference不读取模型级hotword；直接传参会被kwargs吞掉，无法形成可信单变量对照；待未来换用明确支持热词的ASR模型后复验 |
+| `ASR-CMD-02-POSTPROCESS-01` | `P2` | 固定专业词模糊后处理对照 | `REAL_OK` | 使用24条已保存原始ASR文本、固定目标词移液枪/水浴/滴定管、阈值0.85；只生成候选不覆盖原文；修改4条，目标术语0/4→4/4，严格文本13/24→16/24，意图11/24不变，文本/意图回退均0；新增4项测试、全量301项通过；样本内选词存在过拟合风险，未接main |
 | `INTENT-01` | `P0` | 定义自然控制表达与风险等级 | `AUTO_OK` | 新增IntentRisk、IntentEvidence、IntentDisposition、IntentPolicy和IntentDecision；7项专项及全量225项通过；精确结束可执行，语义/LLM结束必须确认，LLM不得直接写确认状态；尚未接main |
 | `INTENT-02` | `P0` | 实现 ASR 与实验LLM之间的轻量 IntentRouter | `DESIGN` | 精确路由子步骤已AUTO_OK：IntentRouter组合InteractionCommandParser与IntentPolicyEvaluator，返回不可变IntentRouteResult；7项路由测试、相关30项及全量232项通过；尚未接自然语义、协调器或main |
 | `INTENT-02-EXACT-01` | `P0` | 精确命令统一路由 | `AUTO_OK` | 普通口述进入实验链路；查看/答复进入上下文；精确结束进入执行；保留raw_text和答复编号；自然表达不猜测；7项专项通过 |
@@ -567,6 +568,7 @@ Word/PDF 属于表现层增强，可以在系统 TTS 之后完成。
 | 2026-08-09 | 组合精确快速路径与正式统一理解 | 新增7项Fake模块集成测试；Python3.11全量293项通过 | 精确控制零LLM调用；未命中一次统一理解；所有LLM控制候选继续经过风险策略；不确定和失败不执行控制 | `INTENT-02-UNIFIED-DISPATCH-01`先定义安全分派合同，不直接改main |
 | 2026-08-09 | 完成24条控制命令真实语料采集 | 24/24 accepted；31次尝试；31个WAV全部存在 | 7次重录请求作为失败证据保留；断点恢复只展示3条未接受样本，补录后每个样本恰有一条accepted | `ASR-CMD-01`后续使用这批固定WAV生成可重复的新基线；音频不上传GitHub |
 | 2026-08-09 | 生成24条新语料真实ASR基线 | 新增4项Fake测试；Python3.11全量297项通过；同参数两次真实运行汇总一致 | 文本13/24、精确规则意图11/24、控制漏触发13、误触发0；13条漏触发全部由精确规则不覆盖自然表达造成，ASR额外意图漏触发0 | 保留统一意图理解路线；专业词“移液枪/水浴/滴定管”等再进入单变量ASR增强对照 |
+| 2026-08-10 | 完成专业词后处理候选对照 | 新增4项Fake测试；Python3.11全量301项通过；24条真实保存文本完成对照 | SenseVoice不支持模型级hotword，任务BLOCKED；后处理候选术语0/4→4/4、文本13/24→16/24、零回退，原文未覆盖 | 不接main；回到`INTENT-02-UNIFIED-DISPATCH-01`安全分派合同 |
 
 ## 7. 每轮结束时必须更新
 
