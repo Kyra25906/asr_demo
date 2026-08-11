@@ -109,6 +109,8 @@ def read_bool(variable_name: str, default: str = "false") -> bool:
 
 
 UNIFIED_SHADOW_ENABLED = read_bool("UNIFIED_SHADOW_ENABLED")
+# 独立开关：影子执行需要额外授权，因为会真实修改 ReplyCoordinator 状态
+UNIFIED_SHADOW_EXECUTE_ENABLED = read_bool("UNIFIED_SHADOW_EXECUTE_ENABLED")
 
 
 # ==================================================

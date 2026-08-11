@@ -34,6 +34,8 @@ class ShadowObservation:
     missing_fields: tuple[str, ...] = ()
     follow_up_required: bool | None = None
     error_type: str | None = None
+    executed: bool = False
+    execution_reason: str | None = None
 
     def __post_init__(self) -> None:
         if self.status == ShadowObservationStatus.OBSERVED:
@@ -46,10 +48,15 @@ class ShadowObservation:
 
 
 class UnifiedShadowObserver:
-    """只读观察；所有异常被隔离成失败报告。"""
+    """观察统一链路的施工单；配置执行器后可真实修改协调器。"""
 
-    def __init__(self, bypass: UnifiedAcceptanceBypass) -> None:
+    def __init__(
+        self,
+        bypass: UnifiedAcceptanceBypass,
+        executor=None,
+    ) -> None:
         self._bypass = bypass
+        self._executor = executor
 
     def observe(
         self,
@@ -60,6 +67,7 @@ class UnifiedShadowObserver:
         asr_result: ASRResult,
         reply_coordinator: ReplyCoordinator,
         recent_context: tuple[str, ...] = (),
+        executor=None,
     ) -> ShadowObservation:
         try:
             snapshot = ClarificationContextSnapshot(
@@ -90,6 +98,19 @@ class UnifiedShadowObserver:
                 for event in (analysis.events if analysis else ())
                 for field_name in event.missing_fields
             ))
+
+            action = result.clarification_action
+            executed = False
+            execution_reason = None
+            exec_target = executor if executor is not None else self._executor
+            if exec_target is not None:
+                try:
+                    exec_result = exec_target.execute(action)
+                    executed = exec_result.state_changed
+                    execution_reason = exec_result.reason
+                except Exception:
+                    execution_reason = "执行器内部异常"
+
             return ShadowObservation(
                 request_id=request_id,
                 session_id=session_id,
@@ -105,6 +126,8 @@ class UnifiedShadowObserver:
                     if analysis is not None
                     else None
                 ),
+                executed=executed,
+                execution_reason=execution_reason,
             )
         except Exception as error:
             return ShadowObservation(

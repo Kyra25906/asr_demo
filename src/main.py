@@ -14,6 +14,7 @@ from src.config import (
     SESSION_CONTEXT_MAX_EVENTS,
     SESSION_MAX_PENDING_TASKS,
     UNIFIED_SHADOW_ENABLED,
+    UNIFIED_SHADOW_EXECUTE_ENABLED,
     WAKEWORD_KEYWORDS_FILE,
     WAKEWORD_MODEL_DIR,
 )
@@ -157,14 +158,17 @@ def create_experiment_llm_processor(
 
 
 def create_unified_shadow_observer() -> UnifiedShadowObserver | None:
-    """按显式配置创建只读影子链；默认关闭。"""
+    """按显式配置创建影子链；默认关闭。执行需额外开启 UNIFIED_SHADOW_EXECUTE_ENABLED。"""
 
     if not UNIFIED_SHADOW_ENABLED:
         return None
 
     processor = UnifiedUnderstandingProcessor(create_llm_client())
     router = UnifiedUnderstandingRouter(processor)
-    print("统一合同影子观察已开启；结果不会接管旧流程。")
+    if UNIFIED_SHADOW_EXECUTE_ENABLED:
+        print("统一合同影子观察已开启；执行已开启，将修改协调器状态。")
+    else:
+        print("统一合同影子观察已开启；结果不会接管旧流程。")
     return UnifiedShadowObserver(UnifiedAcceptanceBypass(router))
 
 
@@ -178,6 +182,14 @@ def display_shadow_observation(observation) -> None:
         )
         return
 
+    exec_note = ""
+    if getattr(observation, 'executed', False):
+        exec_note = "；已执行。"
+    elif getattr(observation, 'execution_reason', None):
+        exec_note = f"；执行失败：{observation.execution_reason}。"
+    else:
+        exec_note = "；未执行。"
+
     print(
         f"[新系统影子] 第{observation.segment_id}段："
         f"目标={observation.destination}，"
@@ -185,8 +197,8 @@ def display_shadow_observation(observation) -> None:
         f"采用={observation.acceptance_kind or 'none'}，"
         f"缺失字段={observation.missing_fields or 'none'}，"
         f"需要追问={observation.follow_up_required}，"
-        f"待确认动作={observation.clarification_action}；"
-        "未执行。"
+        f"待确认动作={observation.clarification_action}"
+        + exec_note
     )
 
 
@@ -601,6 +613,12 @@ def run_experiment_session(
         ReplyCoordinator()
     )
 
+    # 新链路执行器——只在显式开启且影子观察存在时创建
+    shadow_executor = None
+    if shadow_observer is not None and UNIFIED_SHADOW_EXECUTE_ENABLED:
+        from src.core.clarification_executor import ClarificationExecutor
+        shadow_executor = ClarificationExecutor(reply_coordinator)
+
     utterance_count = 0
     experiment_segment_count = 0
 
@@ -703,6 +721,7 @@ def run_experiment_session(
                         segment_id=segment_id,
                         asr_result=asr_result,
                         reply_coordinator=reply_coordinator,
+                        executor=shadow_executor,
                     )
                     display_shadow_observation(observation)
 
