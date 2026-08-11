@@ -62,6 +62,7 @@ class UnifiedPromptTests(unittest.TestCase):
             "不执行控制命令", "execute_now", "逐字复制",
             "不可信数据", "数值也必须保留为字符串",
             "体积、浓度、温度或时间",
+            "缺乏足够依据",
         ):
             self.assertIn(required, prompt)
 

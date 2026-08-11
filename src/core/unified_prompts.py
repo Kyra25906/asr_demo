@@ -16,6 +16,11 @@ UNIFIED_UNDERSTANDING_SYSTEM_PROMPT = """\
 - control：查看问题、暂缓问题、肯定、否定、指定问题回答或结束会话。
 - uncertain：没有足够依据可靠区分experiment与control。
 
+判别优先级：缺乏足够依据时选uncertain，不要强行把可疑文本归为experiment。
+用户可能使用非标准自然表达传递控制意图（如"我先跳过""想看待确认问题"）；判断时
+关注语义意图而非字面匹配。疑似控制但表达不规范、疑似实验但缺乏实体事实的短句，
+优先选uncertain。
+
 只输出一个JSON对象，不要输出Markdown、代码块或额外说明。顶层必须且只能包含：
 {
   "input_kind": "experiment | control | uncertain",

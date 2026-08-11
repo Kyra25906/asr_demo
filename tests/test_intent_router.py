@@ -87,7 +87,7 @@ class IntentRouterTests(unittest.TestCase):
         self.assertEqual(result.command.raw_text, raw_text)
 
     def test_natural_expression_is_not_guessed_in_exact_router(self):
-        result = self.router.route("我想看看还有什么没回答。")
+        result = self.router.route("帮我确认一下还有什么遗漏。")
 
         self.assertEqual(
             result.command.command_type,
@@ -133,12 +133,12 @@ class IntentRouterClassifierIntegrationTests(unittest.TestCase):
             reason="用户想查看尚未回答的问题。",
         )
         classifier = FakeIntentClassifier({
-            "我想看看还有什么没回答。": candidate,
+            "帮我确认一下还有什么遗漏。": candidate,
         })
         router = IntentRouter(classifier=classifier)
 
         result = router.route(
-            "我想看看还有什么没回答。",
+            "帮我确认一下还有什么遗漏。",
             pending_question_numbers=(1, 2),
             current_question_number=2,
         )
@@ -211,7 +211,7 @@ class IntentRouterClassifierIntegrationTests(unittest.TestCase):
         router = IntentRouter(classifier=FakeIntentClassifier(
             error=TimeoutError("timeout"),
         ))
-        raw_text = "我想看看还有什么没回答。"
+        raw_text = "帮我确认一下还有什么遗漏。"
 
         result = router.route(raw_text)
 

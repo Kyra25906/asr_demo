@@ -103,6 +103,39 @@ class InteractionCommandParserTests(unittest.TestCase):
                     InteractionCommandType.NORMAL,
                 )
 
+    def test_parses_natural_defer_expressions(self):
+        for text in (
+            "我先跳过。",
+            "可先跳过。",
+            "能先跳过吗。",
+            "这个先跳过去。",
+            "先问下一个。",
+            "这个问题先放着。",
+        ):
+            with self.subTest(text=text):
+                command = InteractionCommandParser.parse(text)
+                self.assertEqual(
+                    command.command_type,
+                    InteractionCommandType.DEFER_CURRENT,
+                    f"{text!r} 应命中 DEFER_CURRENT",
+                )
+
+    def test_natural_defer_safe_starts_still_reject_experiment(self):
+        # 不以安全前缀开头的"跳过"仍是 NORMAL
+        for text in (
+            "跳过过滤步骤继续加热",
+            "暂时无法观察到沉淀",
+            "短线跳过。",
+            "歌先跳过。",
+        ):
+            with self.subTest(text=text):
+                command = InteractionCommandParser.parse(text)
+                self.assertEqual(
+                    command.command_type,
+                    InteractionCommandType.NORMAL,
+                    f"{text!r} 不能误判为 DEFER",
+                )
+
     def test_parses_review_pending_command(self):
         command = InteractionCommandParser.parse(
             "查看待确认问题。"
@@ -111,6 +144,22 @@ class InteractionCommandParserTests(unittest.TestCase):
             command.command_type,
             InteractionCommandType.REVIEW_PENDING,
         )
+
+    def test_parses_natural_review_expressions(self):
+        for text in (
+            "还有哪些问题没有回答？",
+            "还有什么没回答的。",
+            "有没有还没回答的问题？",
+            "看看还缺什么。",
+            "我想看一下还有什么少了。",
+        ):
+            with self.subTest(text=text):
+                command = InteractionCommandParser.parse(text)
+                self.assertEqual(
+                    command.command_type,
+                    InteractionCommandType.REVIEW_PENDING,
+                    f"{text!r} 应命中 REVIEW_PENDING",
+                )
 
     def test_parses_affirmative_candidate(self):
         command = InteractionCommandParser.parse(

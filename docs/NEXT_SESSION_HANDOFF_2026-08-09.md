@@ -4,9 +4,9 @@
 
 ## 1. 当前唯一下一项
 
-`COMMAND-03`（P0）：让自然表达（"我先跳过"、"可先跳过"等）命中精确控制而非误入实验管线。
+`INTENT-02-REPLY-GATE-02`（P0）：让 ANSWER 施工单携带从 answer_text 提取的结构化实体字段。
 
-依赖链：COMMAND-03 → INTENT-02-REPLY-GATE-02（ANSWER实体填充）→ INTENT-02-REPLY-GATE-03（影子执行器接入）
+COMMAND-03 已完成（AUTO_OK，418项测试）。依赖链：REPLY-GATE-02（ANSWER实体填充）→ REPLY-GATE-03（影子执行器接入）。
 
 ## 2. 可复现基线
 

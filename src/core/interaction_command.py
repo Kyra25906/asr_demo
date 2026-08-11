@@ -85,7 +85,19 @@ class InteractionCommandParser:
         "稍后再问",
         "稍后回答",
         "暂时无法回答",
+        # 真实验收中观察到的自然变体
+        "先问下一个",
+        "这个问题先放着",
     }
+
+    # 安全前缀+后缀匹配：以这些前缀开头 AND 以这些后缀结尾 → DEFER
+    # "跳过过滤步骤继续加热"不以任何安全前缀开头 → 安全
+    _DEFER_SAFE_STARTS = (
+        "我先", "可先", "能先",
+        "这个先", "那个先", "这条先",
+        "当前先",
+    )
+    _DEFER_SAFE_ENDS = ("跳过", "先跳过", "跳过去", "跳过吗", "跳过吧")
 
     REVIEW_PENDING_COMMANDS = {
         "查看待确认问题",
@@ -151,14 +163,20 @@ class InteractionCommandParser:
                 normalized,
             )
 
-        if normalized in cls.DEFER_CURRENT_COMMANDS:
+        if (
+            normalized in cls.DEFER_CURRENT_COMMANDS
+            or cls._match_defer_natural(normalized)
+        ):
             return cls._simple_command(
                 InteractionCommandType.DEFER_CURRENT,
                 raw_text,
                 normalized,
             )
 
-        if normalized in cls.REVIEW_PENDING_COMMANDS:
+        if (
+            normalized in cls.REVIEW_PENDING_COMMANDS
+            or cls._match_review_natural(normalized)
+        ):
             return cls._simple_command(
                 InteractionCommandType.REVIEW_PENDING,
                 raw_text,
@@ -281,6 +299,29 @@ class InteractionCommandParser:
             )
 
         return digits.get(text)
+
+    @classmethod
+    def _match_defer_natural(cls, normalized: str) -> bool:
+        return (
+            normalized.startswith(cls._DEFER_SAFE_STARTS)
+            and normalized.endswith(cls._DEFER_SAFE_ENDS)
+        )
+
+    @classmethod
+    def _match_review_natural(cls, normalized: str) -> bool:
+        # "还有/还有什么/有没有" + "问题"或"什么" → 询问剩余项
+        if normalized.startswith(("还有", "有没有")) and (
+            "问题" in normalized or "什么" in normalized
+        ):
+            return True
+
+        # "看看/看一下/想看/我想看" + "缺/少/什么" → 想查看缺失信息
+        if normalized.startswith(("看看", "看一下", "想看", "我想看")) and any(
+            keyword in normalized for keyword in ("缺", "少", "什么")
+        ):
+            return True
+
+        return False
 
     @staticmethod
     def _simple_command(

@@ -41,7 +41,7 @@ TODO → DESIGN → CODED → AUTO_OK → REAL_OK
 
 ## 2. 当前测试基线
 
-- 全量自动测试：`415 tests OK`（Python 3.11.9，2026-08-11）
+- 全量自动测试：`418 tests OK`（Python 3.11.9，2026-08-11）
 - 最近真实连续口述会话：`20260811_103134`
 - 最近真实会话已验证：影子观察”将溶液加热”输出missing_fields=('temperature','duration')、待确认动作=create、未执行；旧流程正常创建追问；结束命令正常退出
 
@@ -57,17 +57,9 @@ cd C:\Users\dahli\Desktop\asr_demo
 
 ## 3. 当前唯一下一项
 
-> `COMMAND-03`（P0）：让自然表达（"我先跳过"、"可先跳过"、"看待确认问题"等）命中精确控制而非误入实验管线。改两处——精确解析器扩充模糊匹配、统一 Prompt 增加"宁可 uncertain 也别强行归实验"的兜底规则。不改 LLM 风险策略。
+> `INTENT-02-REPLY-GATE-02`（P0）：让 ANSWER 施工单携带从 answer_text 中提取的实体字段（temperature/duration 等），executor 真正修改 PendingClarification 的 missing_fields，而不是仅仅 `state_changed=False, answer_text_received=True`。
 
-**依赖链：**
-
-```text
-COMMAND-03（自然表达 → 精确命中）
-  → INTENT-02-REPLY-GATE-02（ANSWER 填充实体字段）
-  → INTENT-02-REPLY-GATE-03（影子位接入执行器，真实修改协调器）
-```
-
-为什么要先做 COMMAND-03：如果"我先跳过"继续误入 experiment 分支，下游的 REPLY-GATE 再好也收不到 DEFER 施工单——上游就把路径走错了。
+COMMAND-03 已完成（AUTO_OK）。下一步先 ANSWER 填充，再影子位接入执行器。
 
 ## 3.1 当前执行看板
 
@@ -88,7 +80,7 @@ COMMAND-03（自然表达 → 精确命中）
 | 11 | `P0` | `INTENT-02-SHADOW-FOLLOWUP-OBSERVE-01` 追问字段真实影子复验 | `REAL_OK` | 使用新增脱敏摘要观察新统一链自己的missing_fields与follow_up_required | 会话`20260810_180242`确定差异来自统一Prompt缺少能力规则，不是合同矛盾 |
 | 12 | `P0` | `INTENT-02-UNIFIED-PROMPT-MISSING-FIELDS-01` 统一Prompt缺失字段能力对齐 | `REAL_OK` | ~ | Prompt新增1行业务规则；真实DeepSeek复验missing_fields=['temperature','duration']；影子会话`20260811_103134`确认create+缺失字段输出正确 |
 | 13 | `P1` | `INTENT-02-REPLY-GATE-01` ClarificationAction→ReplyCoordinator执行器 | `AUTO_OK` | ~ | 新增ClarificationExecutor+23项测试；ReplyCoordinator新增4个原子方法；影子会话`20260811_103134`验证新链输出create施工单但未执行；415项通过 |
-| 14 | `P0` | `COMMAND-03` 自然控制表达兼容 | `TODO` | 将”我先跳过/可先跳过/看待确认问题”等模糊表达匹配到精确命令，不误入实验管线 | 精确解析器扩充模糊规则+统一Prompt兜底；Fake集成后真实影子复验 |
+| 14 | `P0` | `COMMAND-03` 自然控制表达兼容 | `AUTO_OK` | 将”我先跳过/可先跳过”等自然表达匹配到精确命令 | DEFER新增安全前缀+跳过后缀规则；REVIEW新增自然表达式模式；Prompt新增uncertain兜底规则；3项parser+1项prompt测试；418项全量通过；未做真实影子复验 |
 | 15 | `P0` | `INTENT-02-REPLY-GATE-02` ANSWER施工单实体填充 | `TODO` | 从answer_text提取结构化实体字段并填充到PendingClarification | ANSWER施工单携带解析后的entities，executor真正修改missing_fields |
 | 16 | `P0` | `INTENT-02-REPLY-GATE-03` 影子位接入ClarificationExecutor | `TODO` | 影子观察时CREATE真的创建问题到ReplyCoordinator，旧流程并行跑 | 新老两套5+段多轮真实会话，结果一致后关闭旧ingest_analysis |
 
@@ -417,7 +409,7 @@ A负责提供稳定消息协议和Mock数据，不应让前端直接读取 `main
 | `CLARIFY-TARGET-PERSIST-01` | `P1` | 持久化编号答复与目标问题的关联 | `TODO` | 当前答复原始ASR和结构化事件已保存，target_clarification_id只随内存后台任务传递；导出前需形成可审计关联记录 |
 | `COMMAND-01` | `P0` | 定义统一 InteractionCommand 与命令解析器 | `AUTO_OK` | 暂缓/回看已通过处理器接main；结束/肯定仍沿用旧入口，待后续统一迁移 |
 | `COMMAND-02` | `P0` | 命令匹配忽略 SenseVoice 句尾情绪符号 | `REAL_OK` | 会话20260808_144408中“这个先跳过。😔”成功暂缓问题1，“查看待确认问题。😔”成功回看；原文保留且均未进入实验事件 |
-| `COMMAND-03` | `P0` | 自然命令表达的保守兼容策略 | `TODO` | 会话20260808_144408中“我先跳过”“想看待确认问题”“可先跳过”误入实验事件；需先定义安全语法和歧义边界，不直接堆积错词白名单 |
+| `COMMAND-03` | `P0` | 自然命令表达的保守兼容策略 | `AUTO_OK` | InteractionCommandParser新增DEFER安全前缀+后缀规则和REVIEW自然模式匹配；统一Prompt新增”缺乏足够依据时选uncertain”兜底；新增3项parser测试+1项prompt关键词；418项全量通过；ASR误听变体（如”看待确认”→VAD截音）不靠Parser修复 |
 | `CLARIFY-MAIN-01` | `P1` | 暂缓和回看命令接入main | `REAL_OK` | 会话20260808_141435中准确命令各执行2次；原始ASR已保存，命令未进入实验事件 |
 
 ### F. 确认答复持久化与主流程
@@ -616,6 +608,7 @@ Word/PDF 属于表现层增强，可以在系统 TTS 之后完成。
 | 2026-08-11 | 完成统一Prompt缺失字段能力对齐 | Python3.11全量392项通过；1项Prompt合同关键词测试新增 | 真实DeepSeek以"将溶液加热。"复验：missing_fields=['temperature','duration']、should_ask_follow_up=True、follow_up_question="加热到什么温度？需要加热多长时间？"、降级=False、1次成功2.32秒 | 等待用户决定下一项优先级；可选`INTENT-02-REPLY-GATE-01`接入ReplyCoordinator、创建PR或真实验收pre-roll |
 | 2026-08-11 | 完成ClarificationAction→ReplyCoordinator执行器 | Python3.11全量415项通过（+23项新测试） | ReplyCoordinator新增4个原子方法；新建ClarificationExecutor覆盖7种动作类型；项目拆平消除嵌套路径问题 | 下一步可接入main.py影子位或创建PR推远程 |
 | 2026-08-11 | 项目拆平+影子真实复验+推送远程 | 415项通过；推送到total/codex/asr-demo-unified-understanding | 会话`20260811_103134`影子正确输出create+('temperature','duration')；旧流程正常创建追问；keywords.txt编码修复（UTF-16 LE→UTF-8） | 下一项设为`COMMAND-03`自然控制表达兼容 |
+| 2026-08-11 | 完成COMMAND-03自然控制表达兼容 | 418项通过（+3项parser/评测测试） | DEFER新增6个安全前缀+跳过后缀；REVIEW新增2条自然模式；Prompt新增uncertain兜底；ASR误听变体（"看待确认"→VAD截音）不靠Parser覆盖 | 下一项`INTENT-02-REPLY-GATE-02`ANSWER实体填充 |
 
 ## 7. 每轮结束时必须更新
 
