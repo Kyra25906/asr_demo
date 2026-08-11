@@ -337,7 +337,6 @@ class ClarificationActionPlanner:
             requires_confirmation=requires_confirmation,
         )
 
-    @staticmethod
     @classmethod
     def _extract_supplied_entities(
         cls,
