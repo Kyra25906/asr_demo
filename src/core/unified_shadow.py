@@ -130,6 +130,9 @@ class UnifiedShadowObserver:
                 execution_reason=execution_reason,
             )
         except Exception as error:
+            import traceback
+            print(f"[影子调试] {type(error).__name__}: {error}")
+            traceback.print_exc()
             return ShadowObservation(
                 request_id=request_id,
                 session_id=session_id,

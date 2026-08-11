@@ -185,8 +185,10 @@ def display_shadow_observation(observation) -> None:
     exec_note = ""
     if getattr(observation, 'executed', False):
         exec_note = "；已执行。"
+    elif observation.clarification_action == "no_action":
+        exec_note = "；无需执行。"
     elif getattr(observation, 'execution_reason', None):
-        exec_note = f"；执行失败：{observation.execution_reason}。"
+        exec_note = f"；{observation.execution_reason}。"
     else:
         exec_note = "；未执行。"
 

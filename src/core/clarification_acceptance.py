@@ -353,6 +353,7 @@ class ClarificationActionPlanner:
 
     @classmethod
     def _command_from_request(
+        cls,
         request: DispatchExecutionRequest,
     ) -> InteractionCommand:
         route = request.plan.route_result
