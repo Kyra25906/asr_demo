@@ -181,6 +181,7 @@ class ReplyCoordinator:
         question: str,
         missing_fields: tuple[str, ...] = (),
         requires_confirmation: bool = False,
+        clarification_id_prefix: str = "segment",
     ) -> PendingClarification:
         """从已有字段直接创建一个待确认问题，不从 LLMAnalysisResult 推导。"""
 
@@ -196,7 +197,7 @@ class ReplyCoordinator:
             )
 
         clarification = PendingClarification(
-            clarification_id=f"segment-{segment_id}",
+            clarification_id=f"{clarification_id_prefix}-{segment_id}",
             display_number=self._next_display_number,
             source_segment_id=segment_id,
             source_raw_text=raw_text,
