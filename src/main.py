@@ -618,8 +618,15 @@ def run_experiment_session(
     # 新链路执行器——只在显式开启且影子观察存在时创建
     shadow_executor = None
     if shadow_observer is not None and UNIFIED_SHADOW_EXECUTE_ENABLED:
-        from src.core.clarification_executor import ClarificationExecutor
-        shadow_executor = ClarificationExecutor(reply_coordinator)
+        from src.core.clarification_executor import (
+            AnswerEntityExtractor,
+            ClarificationExecutor,
+        )
+        extractor = AnswerEntityExtractor(create_llm_client())
+        shadow_executor = ClarificationExecutor(
+            reply_coordinator,
+            entity_extractor=extractor,
+        )
 
     utterance_count = 0
     experiment_segment_count = 0
