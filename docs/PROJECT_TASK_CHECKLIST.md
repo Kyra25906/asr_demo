@@ -42,8 +42,8 @@ TODO → DESIGN → CODED → AUTO_OK → REAL_OK
 ## 2. 当前测试基线
 
 - 全量自动测试：`415 tests OK`（Python 3.11.9，2026-08-11）
-- 最近真实连续口述会话：`20260810_180242`
-- 最近真实会话已验证：结束命令不会落入业务记录；“将溶液加热”在旧链会追问温度/时间，新统一链未登记缺失字段，已定位为统一Prompt缺少业务能力规则。早期编号回答与自然命令误识别证据仍保留在完整任务库。
+- 最近真实连续口述会话：`20260811_103134`
+- 最近真实会话已验证：影子观察”将溶液加热”输出missing_fields=('temperature','duration')、待确认动作=create、未执行；旧流程正常创建追问；结束命令正常退出
 
 恢复工作时先运行：
 
@@ -57,9 +57,17 @@ cd C:\Users\dahli\Desktop\asr_demo
 
 ## 3. 当前唯一下一项
 
-> `INTENT-02-REPLY-GATE-01`（P1）：把已采用且目标明确的 `ClarificationAction` 接入 `ReplyCoordinator`，确认只有经过完整采用链验证的动作才能在真实协调器中登记或更新问题。先做 Fake 协调器集成测试，再开启影子模式在真实会话中观察动作生成。
+> `COMMAND-03`（P0）：让自然表达（"我先跳过"、"可先跳过"、"看待确认问题"等）命中精确控制而非误入实验管线。改两处——精确解析器扩充模糊匹配、统一 Prompt 增加"宁可 uncertain 也别强行归实验"的兜底规则。不改 LLM 风险策略。
 
-等待用户决定下一项优先级后开始。
+**依赖链：**
+
+```text
+COMMAND-03（自然表达 → 精确命中）
+  → INTENT-02-REPLY-GATE-02（ANSWER 填充实体字段）
+  → INTENT-02-REPLY-GATE-03（影子位接入执行器，真实修改协调器）
+```
+
+为什么要先做 COMMAND-03：如果"我先跳过"继续误入 experiment 分支，下游的 REPLY-GATE 再好也收不到 DEFER 施工单——上游就把路径走错了。
 
 ## 3.1 当前执行看板
 
@@ -77,11 +85,12 @@ cd C:\Users\dahli\Desktop\asr_demo
 | 8 | `P0` | `INTENT-02-MAIN-SHADOW-INTEGRATION-01` main影子观察接入 | `REAL_OK` | 新采用链读取main产生的同一份最终ASR证据并输出可比较观察结果 | 自动全量385项；真实会话`20260810_120209`观察4段，3段成功、结束候选1段安全失败且旧流程继续；未写影子业务数据、未改状态、未发TTS。首次怀疑追问合同缺失，后续测试证明合同原有双检验，真实差异最终定位为统一Prompt能力规则遗漏；main命令标准化漂移已修复并REAL_OK |
 | 9 | `P0` | `INTENT-02-FOLLOWUP-INVARIANT-01` 追问跨字段一致性合同 | `AUTO_OK` | `missing_fields`非空或`needs_confirmation=true`时，不能接受`should_ask_follow_up=false`并产生NO_ACTION | 复核发现parse_analysis原本已强制该不变量，采用快照物化时也会再次严格解析；新增5项明确上下游反例测试并补影子missing_fields/follow_up_required摘要；相关25项、全量390项通过。真实会话no_action不能证明矛盾，因为当时未记录新链字段 |
 | 10 | `P0` | `INTENT-02-END-NORMALIZATION-UNIFY-01` 结束命令标准化单一来源 | `REAL_OK` | main与InteractionCommandParser必须复用同一份SenseVoice情绪符号清理和命令集合 | 删除main独立字典/正则，新增情绪尾反例和一致性2项，全量392项；修改后短真实会话直接结束，ASR业务记录保持186、事件保持133，主程序停止且最后记录未变化，证明结束口述未进入分段、影子/旧LLM或存储 |
-| 11 | `P0` | `INTENT-02-SHADOW-FOLLOWUP-OBSERVE-01` 追问字段真实影子复验 | `REAL_OK` | 使用新增脱敏摘要观察新统一链自己的missing_fields与follow_up_required | 会话`20260810_180242`真实ASR正确；新链及保存证据重放均为missing_fields空、follow_up_required=false、NO_ACTION，旧链为temperature/duration并追问；确定差异来自统一Prompt缺少“何时登记缺失字段”的能力规则，不是合同矛盾 |
-| 12 | `P0` | `INTENT-02-UNIFIED-PROMPT-MISSING-FIELDS-01` 统一Prompt缺失字段能力对齐 | `REAL_OK` | 迁移旧Prompt的缺失字段判定规则，保持统一输出合同与安全边界不变 | 统一Prompt新增1行业务规则；Prompt合同测试新增关键词验证；全量392项通过；真实DeepSeek以”将溶液加热。”复验：missing_fields=['temperature','duration']、should_ask_follow_up=True、follow_up_question=”加热到什么温度？需要加热多长时间？”、1次成功2.32秒；不改变解析/采用合同，create仍只是准备，影子无提交权 |
-| 13 | `P0` | `ASR-EVIDENCE-CONTRACT-01` ASR与LLM原始证据命名合同 | `REAL_OK` | schema v2区分ASR模型原始文本、忠实转写与纠错候选；生产消费者完成迁移 | 新增10项合同测试、全量318项；182条历史v1只读兼容且哈希不变；真实固定WAV输出v2 |
-| 14 | `P2` | `ASR-CMD-REC-01` 独立语料采集器真实验收 | `REAL_OK` | 正式入口完成24/24；31次尝试含24次接受、7次重录请求；断点恢复后只补待完成项 | 31个WAV全部存在，24个样本ID各有且只有一条接受记录 |
-| 15 | `P1` | `PRESENT-INTEGRATE-01` 最小消息链路 | `TODO` | 先把一种待确认消息接入PresentationMessage→Presenter | 用户消息、状态日志和开发日志开始分流 |
+| 11 | `P0` | `INTENT-02-SHADOW-FOLLOWUP-OBSERVE-01` 追问字段真实影子复验 | `REAL_OK` | 使用新增脱敏摘要观察新统一链自己的missing_fields与follow_up_required | 会话`20260810_180242`确定差异来自统一Prompt缺少能力规则，不是合同矛盾 |
+| 12 | `P0` | `INTENT-02-UNIFIED-PROMPT-MISSING-FIELDS-01` 统一Prompt缺失字段能力对齐 | `REAL_OK` | ~ | Prompt新增1行业务规则；真实DeepSeek复验missing_fields=['temperature','duration']；影子会话`20260811_103134`确认create+缺失字段输出正确 |
+| 13 | `P1` | `INTENT-02-REPLY-GATE-01` ClarificationAction→ReplyCoordinator执行器 | `AUTO_OK` | ~ | 新增ClarificationExecutor+23项测试；ReplyCoordinator新增4个原子方法；影子会话`20260811_103134`验证新链输出create施工单但未执行；415项通过 |
+| 14 | `P0` | `COMMAND-03` 自然控制表达兼容 | `TODO` | 将”我先跳过/可先跳过/看待确认问题”等模糊表达匹配到精确命令，不误入实验管线 | 精确解析器扩充模糊规则+统一Prompt兜底；Fake集成后真实影子复验 |
+| 15 | `P0` | `INTENT-02-REPLY-GATE-02` ANSWER施工单实体填充 | `TODO` | 从answer_text提取结构化实体字段并填充到PendingClarification | ANSWER施工单携带解析后的entities，executor真正修改missing_fields |
+| 16 | `P0` | `INTENT-02-REPLY-GATE-03` 影子位接入ClarificationExecutor | `TODO` | 影子观察时CREATE真的创建问题到ReplyCoordinator，旧流程并行跑 | 新老两套5+段多轮真实会话，结果一致后关闭旧ingest_analysis |
 
 ### 当前路线为什么这样排
 
@@ -606,6 +615,7 @@ Word/PDF 属于表现层增强，可以在系统 TTS 之后完成。
 | 2026-08-10 | 按教学约定整理累计工作区和交接文档 | Python3.11全量392项重新运行通过；compileall与git diff --check通过 | 当前仍在main，origin仍指向Kyra25906/asr_demo；20个已跟踪文件修改及30个新增代码/脚本/测试文件均为累计工作，未删除或提交；.env、真实录音、results、模型和venv保持忽略 | 下一项仍为`INTENT-02-UNIFIED-PROMPT-MISSING-FIELDS-01`；提交总仓前先确认远程、新建非main分支并按能力拆分提交 |
 | 2026-08-11 | 完成统一Prompt缺失字段能力对齐 | Python3.11全量392项通过；1项Prompt合同关键词测试新增 | 真实DeepSeek以"将溶液加热。"复验：missing_fields=['temperature','duration']、should_ask_follow_up=True、follow_up_question="加热到什么温度？需要加热多长时间？"、降级=False、1次成功2.32秒 | 等待用户决定下一项优先级；可选`INTENT-02-REPLY-GATE-01`接入ReplyCoordinator、创建PR或真实验收pre-roll |
 | 2026-08-11 | 完成ClarificationAction→ReplyCoordinator执行器 | Python3.11全量415项通过（+23项新测试） | ReplyCoordinator新增4个原子方法；新建ClarificationExecutor覆盖7种动作类型；项目拆平消除嵌套路径问题 | 下一步可接入main.py影子位或创建PR推远程 |
+| 2026-08-11 | 项目拆平+影子真实复验+推送远程 | 415项通过；推送到total/codex/asr-demo-unified-understanding | 会话`20260811_103134`影子正确输出create+('temperature','duration')；旧流程正常创建追问；keywords.txt编码修复（UTF-16 LE→UTF-8） | 下一项设为`COMMAND-03`自然控制表达兼容 |
 
 ## 7. 每轮结束时必须更新
 

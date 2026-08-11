@@ -4,21 +4,18 @@
 
 ## 1. 当前唯一下一项
 
-`INTENT-02-UNIFIED-PROMPT-MISSING-FIELDS-01` **已完成**（REAL_OK）。
+`COMMAND-03`（P0）：让自然表达（"我先跳过"、"可先跳过"等）命中精确控制而非误入实验管线。
 
-下一项待用户决定，候选：
-- `INTENT-02-REPLY-GATE-01`（P1）：把已采用 `ClarificationAction` 接入 `ReplyCoordinator`
-- 提交 PR 到 total 远程仓库
-- AUDIO-PREROLL-REAL-01 句首预缓冲真实验收
+依赖链：COMMAND-03 → INTENT-02-REPLY-GATE-02（ANSWER实体填充）→ INTENT-02-REPLY-GATE-03（影子执行器接入）
 
 ## 2. 可复现基线
 
-- 真实项目：`C:\Users\dahli\Desktop\asr_demo`
+- 真实项目：`C:\Users\dahli\Desktop\asr_demo`（已拆平，无 asr_demo/ 嵌套）
 - 正式解释器：`.venv` 中的 Python 3.11.9
-- 全量自动测试：`392 tests OK`（2026-08-11重新运行）
-- 当前 Git 分支：`main`
-- 当前远程：`origin = https://github.com/Kyra25906/asr_demo.git`
-- 工作区存在累计未提交修改，不得覆盖、回退或把无关文件混入清理。
+- 全量自动测试：`415 tests OK`（2026-08-11）
+- 当前 Git 分支：`codex/asr-demo-unified-understanding`
+- 当前远程：`total = https://github.com/diw35688-sketch/ai107.git`
+- 工作区干净；已提交并推送到 total。
 
 恢复命令：
 
@@ -46,6 +43,11 @@ git diff --check
 - 安全分派固定目标与最小权限，不直接产生副作用。
 - 执行请求绑定 request/session/segment、最终 ASR 证据、目标和权限，并有幂等 Fake 验收。
 
+### Prompt与执行器
+
+- 统一Prompt补齐了缺失字段检测触发条件（旧ANALYSIS_SYSTEM_PROMPT规则4迁入，REAL_OK）。
+- ClarificationExecutor将ClarificationAction映射为ReplyCoordinator原子操作，23项测试覆盖7种动作类型（AUTO_OK）。
+
 ### 采用合同
 
 - 实验候选经过来源、原文、目标、权限和降级形状检查后，才生成不可变规范快照。
@@ -61,6 +63,20 @@ git diff --check
 - 影子不写业务文件、不改 SessionContext/ReplyCoordinator、不发 TTS；异常只产生失败摘要，旧流程继续。
 
 ## 4. 最近真实验收
+
+### 影子会话：Prompt缺失字段 + 执行器验证
+
+- 会话：`20260811_103134`（1段实验口述"将溶液加热。"+ 结束命令）
+- 影子输出：`目标=experiment_pipeline, 缺失字段=('temperature','duration'), 需要追问=True, 待确认动作=create；未执行`
+- 旧流程：正常创建追问问题1，终端显示"请问加热的目标温度是多少？需要加热多长时间？"
+- 结论：新旧链对"将溶液加热"的判断完全一致，新链的施工单正确产出但未执行（影子隔离生效）。
+
+### Prompt缺失字段能力修复 + 项目拆平
+
+- 统一Prompt实验规则新增一行，与旧ANALYSIS_SYSTEM_PROMPT第4条规则一致。
+- 真实DeepSeek以独立脚本复验"将溶液加热。"：missing_fields=['temperature','duration']、1次成功2.32秒。
+- 项目拆平：消除asr_demo/嵌套，消除路径断裂问题（.env、models、测试命令全部简化）。
+- 推送到total/codex/asr-demo-unified-understanding。
 
 ### main影子接入
 
@@ -114,6 +130,9 @@ docs/                 任务清单、交接和学习记录
 
 ## 6. 仍未开放的能力
 
+- ClarificationExecutor尚未接入main.py影子位（CREATE/DEFER/CONFIRM只产出施工单，未真实修改协调器）。
+- ANSWER施工单不填充实体字段（需LLM从answer_text中提取结构化entities）。
+- 自然表达（"我先跳过/可先跳过"）会误入实验管线，需COMMAND-03修复后DEFER才能正常走新链路。
 - 新统一链尚未接管旧 SegmentProcessor 或真实存储。
 - ClarificationAction 尚未提交到 ReplyCoordinator。
 - 结束会话副作用尚未通过统一执行器开放；main仍在正式本地Parser命中后直接结束。
