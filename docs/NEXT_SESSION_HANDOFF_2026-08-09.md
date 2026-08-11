@@ -4,9 +4,9 @@
 
 ## 1. 当前唯一下一项
 
-`INTENT-02-REPLY-GATE-02`（P0）：让 ANSWER 施工单携带从 answer_text 提取的结构化实体字段。
+**真实验收：** 开启 `UNIFIED_SHADOW_EXECUTE_ENABLED=true`，运行 main.py，说多段话验证新老链路结果一致。
 
-COMMAND-03 已完成（AUTO_OK，418项测试）。依赖链：REPLY-GATE-02（ANSWER实体填充）→ REPLY-GATE-03（影子执行器接入）。
+COMMAND-03、REPLY-GATE-02、REPLY-GATE-03 全部完成（422项测试）。三个前置任务构成完整闭环：自然表达路由 → ANSWER填充 → 执行器接入。
 
 ## 2. 可复现基线
 

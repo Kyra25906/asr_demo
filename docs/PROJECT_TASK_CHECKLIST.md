@@ -57,9 +57,9 @@ cd C:\Users\dahli\Desktop\asr_demo
 
 ## 3. 当前唯一下一项
 
-> `INTENT-02-REPLY-GATE-03`（P0）：把 `ClarificationExecutor` 接入 `main.py` 的影子位，影子模式开始真实修改 `ReplyCoordinator`。新老两套一起跑，跑 5+ 段多轮真实会话比较结果一致后，关闭旧 `ingest_analysis`。
+> 真实验收：`UNIFIED_SHADOW_EXECUTE_ENABLED=true` 开启执行，说多段话验证新老两套链路结果一致。验收通过后关闭旧 `ingest_analysis`，新链路成为唯一来源。
 
-COMMAND-03 ✅、REPLY-GATE-02 ✅。最后一步接入执行器。
+COMMAND-03 ✅、REPLY-GATE-02 ✅、REPLY-GATE-03 ✅。三个前置任务全部完成，进入验收阶段。
 
 ## 3.1 当前执行看板
 
@@ -82,7 +82,7 @@ COMMAND-03 ✅、REPLY-GATE-02 ✅。最后一步接入执行器。
 | 13 | `P1` | `INTENT-02-REPLY-GATE-01` ClarificationAction→ReplyCoordinator执行器 | `AUTO_OK` | ~ | 新增ClarificationExecutor+23项测试；ReplyCoordinator新增4个原子方法；影子会话`20260811_103134`验证新链输出create施工单但未执行；415项通过 |
 | 14 | `P0` | `COMMAND-03` 自然控制表达兼容 | `AUTO_OK` | 将”我先跳过/可先跳过”等自然表达匹配到精确命令 | DEFER新增安全前缀+跳过后缀规则；REVIEW新增自然表达式模式；Prompt新增uncertain兜底规则；3项parser+1项prompt测试；418项全量通过；未做真实影子复验 |
 | 15 | `P0` | `INTENT-02-REPLY-GATE-02` ANSWER施工单实体填充 | `AUTO_OK` | ~ | 新增AnswerEntityExtractor轻量LLM提取+answer_clarification方法；统一理解control分支可携带supplied_entities；Executor优先用施工单实体再fallback到extractor；422项通过 |
-| 16 | `P0` | `INTENT-02-REPLY-GATE-03` 影子位接入ClarificationExecutor | `TODO` | 影子观察时CREATE真的创建问题到ReplyCoordinator，旧流程并行跑 | 新老两套5+段多轮真实会话，结果一致后关闭旧ingest_analysis |
+| 16 | `P0` | `INTENT-02-REPLY-GATE-03` 影子位接入ClarificationExecutor | `AUTO_OK` | 影子观察时CREATE真的创建问题到ReplyCoordinator，旧流程并行跑 | ShadowObservation新增executed/execution_reason；observe()内接executor.execute()；新增UNIFIED_SHADOW_EXECUTE_ENABLED独立开关；422项通过；未真实验收 |
 
 ### 当前路线为什么这样排
 
@@ -609,7 +609,8 @@ Word/PDF 属于表现层增强，可以在系统 TTS 之后完成。
 | 2026-08-11 | 完成ClarificationAction→ReplyCoordinator执行器 | Python3.11全量415项通过（+23项新测试） | ReplyCoordinator新增4个原子方法；新建ClarificationExecutor覆盖7种动作类型；项目拆平消除嵌套路径问题 | 下一步可接入main.py影子位或创建PR推远程 |
 | 2026-08-11 | 项目拆平+影子真实复验+推送远程 | 415项通过；推送到total/codex/asr-demo-unified-understanding | 会话`20260811_103134`影子正确输出create+('temperature','duration')；旧流程正常创建追问；keywords.txt编码修复（UTF-16 LE→UTF-8） | 下一项设为`COMMAND-03`自然控制表达兼容 |
 | 2026-08-11 | 完成COMMAND-03自然控制表达兼容 | 418项通过（+3项parser/评测测试） | DEFER新增6个安全前缀+跳过后缀；REVIEW新增2条自然模式；Prompt新增uncertain兜底 | 下一项`INTENT-02-REPLY-GATE-02`ANSWER实体填充 |
-| 2026-08-11 | 完成REPLY-GATE-02 ANSWER实体填充 | 422项通过（+4项executor/合同测试） | AnswerEntityExtractor+answer_clarification；统一理解control分支supplied_entities优化；Executor优先施工单实体再fallback提取器 | 下一项`INTENT-02-REPLY-GATE-03`影子接入执行器 |
+| 2026-08-11 | 完成REPLY-GATE-02 ANSWER实体填充 | 422项通过 | AnswerEntityExtractor+answer_clarification；统一理解control分支supplied_entities优化 | 下一项`INTENT-02-REPLY-GATE-03`影子接入执行器 |
+| 2026-08-11 | 完成REPLY-GATE-03 影子位接入执行器 | 422项通过 | ShadowObservation新增executed字段；observe()内接executor.execute()；新增UNIFIED_SHADOW_EXECUTE_ENABLED开关；main.py创建executor并传入 | 下一项：真实验收 |
 
 ## 7. 每轮结束时必须更新
 

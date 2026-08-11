@@ -2506,3 +2506,48 @@ LLM 已经读了 answer_text 的含义（"60摄氏度"→temperature），但旧
 
 新增能力：ANSWER 施工单可以真正填充 missing_fields，问题可以从 ACTIVE 变成 RESOLVED。
 已验证：422项全量通过。
+
+## 2026-08-11：REPLY-GATE-03 影子位接入执行器——观察变成执行
+
+### 问题
+
+影子观察员（UnifiedShadowObserver）一直在偷偷看新链路的施工单，但看完就扔了。
+ClarificationExecutor 已经建好、测好，但从未接入真实流程。
+
+### 设计——在观察和返回之间插入执行
+
+observe() 方法内部：先跑完整统一理解链路 → 拿到施工单 → 原来是直接把施工单还原成
+字符串 "create" 扔掉 → 现在在 return 之前，如果配置了执行器，调 executor.execute(action)
+真正修改 ReplyCoordinator。
+
+执行器在 main.py 的会话循环里创建——因为执行器需要 ReplyCoordinator（会话级对象），
+而 ReplyCoordinator 在会话开始时才创建，所以执行器也必须在这里创建。
+
+新增独立开关 UNIFIED_SHADOW_EXECUTE_ENABLED——和 UNIFIED_SHADOW_ENABLED（观察开关）
+分开。观察是"偷偷看"，执行是"真正改"——需要的授权等级不同。
+
+### 改动
+
+| 文件 | 变更 |
+|---|---|
+| config.py | 新增 UNIFIED_SHADOW_EXECUTE_ENABLED |
+| unified_shadow.py | ShadowObservation 新增 executed/execution_reason；Observer 构造函数支持 executor；observe() 内执行施工单 |
+| main.py | 会话内创建 ClarificationExecutor(reply_coordinator)；传 executor 给 observe()；display 显示执行状态 |
+
+### 学到的知识
+
+1. **生命周期对齐**：执行器需要 ReplyCoordinator，而 ReplyCoordinator 是会话级对象——
+不在 main() 启动时存在。所以执行器不能在 create_unified_shadow_observer()（启动时调用）
+里创建，必须在 run_experiment_session()（会话开始时调用）里创建。依赖的对象在哪一层
+创建，依赖者就在哪一层创建。
+
+2. **独立开关的安全价值**：观察（只读）和执行（写入）是两个不同级别的操作。观察是
+每条 ASR 多一次 DeepSeek 调用；执行是真实修改协调器状态。需要独立授权——用户可能
+愿意观察但不放心执行，两个开关给了用户选择权。
+
+3. **在数据最完整的地方做事**：observe() 内部第 80 行有完整的施工单对象（所有字段
+都可访问），main.py 只有脱敏后的字符串 "create"。选择在数据最完整的地方执行——
+不因为调用链的便利性而牺牲数据完整度。
+
+新增能力：影子观察不再只读——开启 UNIFIED_SHADOW_EXECUTE_ENABLED 后施工单被真实执行。
+已验证：422项全量通过。
