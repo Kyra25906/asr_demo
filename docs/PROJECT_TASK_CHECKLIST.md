@@ -41,7 +41,7 @@ TODO → DESIGN → CODED → AUTO_OK → REAL_OK
 
 ## 2. 当前测试基线
 
-- 全量自动测试：`418 tests OK`（Python 3.11.9，2026-08-11）
+- 全量自动测试：`422 tests OK`（Python 3.11.9，2026-08-11）
 - 最近真实连续口述会话：`20260811_103134`
 - 最近真实会话已验证：影子观察”将溶液加热”输出missing_fields=('temperature','duration')、待确认动作=create、未执行；旧流程正常创建追问；结束命令正常退出
 
@@ -57,9 +57,9 @@ cd C:\Users\dahli\Desktop\asr_demo
 
 ## 3. 当前唯一下一项
 
-> `INTENT-02-REPLY-GATE-02`（P0）：让 ANSWER 施工单携带从 answer_text 中提取的实体字段（temperature/duration 等），executor 真正修改 PendingClarification 的 missing_fields，而不是仅仅 `state_changed=False, answer_text_received=True`。
+> `INTENT-02-REPLY-GATE-03`（P0）：把 `ClarificationExecutor` 接入 `main.py` 的影子位，影子模式开始真实修改 `ReplyCoordinator`。新老两套一起跑，跑 5+ 段多轮真实会话比较结果一致后，关闭旧 `ingest_analysis`。
 
-COMMAND-03 已完成（AUTO_OK）。下一步先 ANSWER 填充，再影子位接入执行器。
+COMMAND-03 ✅、REPLY-GATE-02 ✅。最后一步接入执行器。
 
 ## 3.1 当前执行看板
 
@@ -81,7 +81,7 @@ COMMAND-03 已完成（AUTO_OK）。下一步先 ANSWER 填充，再影子位接
 | 12 | `P0` | `INTENT-02-UNIFIED-PROMPT-MISSING-FIELDS-01` 统一Prompt缺失字段能力对齐 | `REAL_OK` | ~ | Prompt新增1行业务规则；真实DeepSeek复验missing_fields=['temperature','duration']；影子会话`20260811_103134`确认create+缺失字段输出正确 |
 | 13 | `P1` | `INTENT-02-REPLY-GATE-01` ClarificationAction→ReplyCoordinator执行器 | `AUTO_OK` | ~ | 新增ClarificationExecutor+23项测试；ReplyCoordinator新增4个原子方法；影子会话`20260811_103134`验证新链输出create施工单但未执行；415项通过 |
 | 14 | `P0` | `COMMAND-03` 自然控制表达兼容 | `AUTO_OK` | 将”我先跳过/可先跳过”等自然表达匹配到精确命令 | DEFER新增安全前缀+跳过后缀规则；REVIEW新增自然表达式模式；Prompt新增uncertain兜底规则；3项parser+1项prompt测试；418项全量通过；未做真实影子复验 |
-| 15 | `P0` | `INTENT-02-REPLY-GATE-02` ANSWER施工单实体填充 | `TODO` | 从answer_text提取结构化实体字段并填充到PendingClarification | ANSWER施工单携带解析后的entities，executor真正修改missing_fields |
+| 15 | `P0` | `INTENT-02-REPLY-GATE-02` ANSWER施工单实体填充 | `AUTO_OK` | ~ | 新增AnswerEntityExtractor轻量LLM提取+answer_clarification方法；统一理解control分支可携带supplied_entities；Executor优先用施工单实体再fallback到extractor；422项通过 |
 | 16 | `P0` | `INTENT-02-REPLY-GATE-03` 影子位接入ClarificationExecutor | `TODO` | 影子观察时CREATE真的创建问题到ReplyCoordinator，旧流程并行跑 | 新老两套5+段多轮真实会话，结果一致后关闭旧ingest_analysis |
 
 ### 当前路线为什么这样排
@@ -608,7 +608,8 @@ Word/PDF 属于表现层增强，可以在系统 TTS 之后完成。
 | 2026-08-11 | 完成统一Prompt缺失字段能力对齐 | Python3.11全量392项通过；1项Prompt合同关键词测试新增 | 真实DeepSeek以"将溶液加热。"复验：missing_fields=['temperature','duration']、should_ask_follow_up=True、follow_up_question="加热到什么温度？需要加热多长时间？"、降级=False、1次成功2.32秒 | 等待用户决定下一项优先级；可选`INTENT-02-REPLY-GATE-01`接入ReplyCoordinator、创建PR或真实验收pre-roll |
 | 2026-08-11 | 完成ClarificationAction→ReplyCoordinator执行器 | Python3.11全量415项通过（+23项新测试） | ReplyCoordinator新增4个原子方法；新建ClarificationExecutor覆盖7种动作类型；项目拆平消除嵌套路径问题 | 下一步可接入main.py影子位或创建PR推远程 |
 | 2026-08-11 | 项目拆平+影子真实复验+推送远程 | 415项通过；推送到total/codex/asr-demo-unified-understanding | 会话`20260811_103134`影子正确输出create+('temperature','duration')；旧流程正常创建追问；keywords.txt编码修复（UTF-16 LE→UTF-8） | 下一项设为`COMMAND-03`自然控制表达兼容 |
-| 2026-08-11 | 完成COMMAND-03自然控制表达兼容 | 418项通过（+3项parser/评测测试） | DEFER新增6个安全前缀+跳过后缀；REVIEW新增2条自然模式；Prompt新增uncertain兜底；ASR误听变体（"看待确认"→VAD截音）不靠Parser覆盖 | 下一项`INTENT-02-REPLY-GATE-02`ANSWER实体填充 |
+| 2026-08-11 | 完成COMMAND-03自然控制表达兼容 | 418项通过（+3项parser/评测测试） | DEFER新增6个安全前缀+跳过后缀；REVIEW新增2条自然模式；Prompt新增uncertain兜底 | 下一项`INTENT-02-REPLY-GATE-02`ANSWER实体填充 |
+| 2026-08-11 | 完成REPLY-GATE-02 ANSWER实体填充 | 422项通过（+4项executor/合同测试） | AnswerEntityExtractor+answer_clarification；统一理解control分支supplied_entities优化；Executor优先施工单实体再fallback提取器 | 下一项`INTENT-02-REPLY-GATE-03`影子接入执行器 |
 
 ## 7. 每轮结束时必须更新
 

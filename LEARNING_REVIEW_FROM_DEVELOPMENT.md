@@ -2448,3 +2448,61 @@ REVIEW_PENDING 新增自然模式：
 追问晚到的问题根因：LLM 处理耗时（2~3 秒）和用户继续说话是并行的。即使新链路能正确判断下一段是回答还是新实验，追问仍然可能迟到。
 
 但修复顺序应该是"先路由，后时机"——如果路由判断是错的（把回答当实验内容），在最完美的时机弹出追问也没用。时机问题由 TIMING-01/02/03 和 PRESENT-03 覆盖，在 REPLY-GATE 三个任务完成后处理。
+
+## 2026-08-11：REPLY-GATE-02 ANSWER实体填充——让回答真正解决问题
+
+### 问题
+
+用户说"问题2，60摄氏度加热10分钟"，新链路能识别为 ANSWER 施工单，但施工单上只有
+answer_text 字符串。Executor 诚实返回 state_changed=False——"收到了答复，但不知道能填什么"。
+PendingClarification 的 missing_fields 纹丝不动。
+
+同时发现一个更大的问题：非精确命中时，统一理解在一次 LLM 调用里同时做了分类和理解了
+answer_text 的语义，但只保留了分类结果（targeted_answer），把 LLM 已经提取出的实体
+信息（temperature=60, duration=10分钟）丢掉了。Executor 又得单独调一次提取器。
+
+### 设计——两层提取，一个目标
+
+**第一层：施工单上的实体（supplied_entity_fields）**
+
+统一理解的 control 分支新增 supplied_entities 字段。当 LLM 在一次调用里同时完成了
+分类和实体识别时，Planner 把实体字段名直接放在 ANSWER 施工单上。Executor 优先用这些
+字段，不调提取器。
+
+**第二层：执行时的提取（AnswerEntityExtractor）**
+
+精确命中的回答走 Parser 快速路径——零 LLM 分类。但实体提取仍需一次 LLM 调用。用轻量
+Prompt（~100 tokens，只返回 entities 对象），比旧 analyze_segment 轻得多。
+
+**谁负责什么：**
+- Parser：识别"这是对问题N的回答"（精确正则，0 LLM）
+- 统一理解（LLM 路径）：分类 + 实体提取 一次完成（1 LLM）
+- AnswerEntityExtractor（精确路径）：实体提取（1 LLM，但轻量）
+- Executor：优先用施工单实体，没有才调提取器
+
+### 改动
+
+| 文件 | 变更 |
+|---|---|
+| reply_coordinator.py | 新增 answer_clarification（按ID+revision校验后填充实体） |
+| clarification_executor.py | 新增 AnswerEntityExtractor + 轻量Prompt；Executor构造函数接受可选extractor；_execute_answer优先用supplied_entity_fields |
+| unified_prompts.py | control分支新增 supplied_entities 字段规则 |
+| unified_understanding.py | ControlUnderstanding 新增 supplied_entities；_parse_supplied_entities 严格校验 |
+| clarification_acceptance.py | ClarificationAction 新增 supplied_entity_fields；Planner 从 ControlUnderstanding 透传 |
+| tests | +4项：Fake提取器填充、全量填充解决、空提取器fallback、stale revision拒绝 |
+
+### 学到的知识
+
+1. **不要让同一个 LLM 调用做两件事再扔掉一半结果**：统一理解在分类 targeted_answer 时，
+LLM 已经读了 answer_text 的含义（"60摄氏度"→temperature），但旧合同只保留了分类标签。
+加一个可选字段不增加 LLM 调用次数，但消除了 Executor 的二次提取。
+
+2. **精确路径和 LLM 路径需要不同的提取策略**：精确命中时根本没有 LLM 分类调用，
+所以实体提取必须是独立的。LLM 路径下可以合并。不是二选一，是各有各的路径。
+
+3. **施工单上的信息和执行时的信息是两层**：supplied_entity_fields 是 Planner 给的
+（来自统一理解），extractor 是 Executor 自己调的（当施工单上没有时）。Executor 不
+依赖施工单一定有实体——它有自己的 fallback。这保持了 Planner 的纯函数特性。
+
+新增能力：ANSWER 施工单可以真正填充 missing_fields，问题可以从 ACTIVE 变成 RESOLVED。
+已验证：422项全量通过。
