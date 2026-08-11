@@ -2551,3 +2551,40 @@ observe() 方法内部：先跑完整统一理解链路 → 拿到施工单 → 
 
 新增能力：影子观察不再只读——开启 UNIFIED_SHADOW_EXECUTE_ENABLED 后施工单被真实执行。
 已验证：422项全量通过。
+
+## 2026-08-11 收尾：REPLY-GATE-03 真实验收——四轮修复打通 CREATE→ANSWER 闭环
+
+### 今日完成
+
+COMMAND-03（自然表达路由）+ REPLY-GATE-02（ANSWER实体填充）+ REPLY-GATE-03（影子执行器接入）
+三个任务全部 REAL_OK。422项全量测试 + 真实会话验证。
+
+### 真实验收中的 bug
+
+四轮真实会话，每轮暴露一个 bug：
+
+1. `140236`：新老链路用相同 clarification_id "segment-1" → 上下文快照检测到重复 ID → ValueError
+   修复：执行器创建的 ID 改用 "unified-" 前缀
+
+2. `141330`：_extract_supplied_entities 加了 @staticmethod 又加 @classmethod，两个装饰器冲突
+   → Python 报 `classmethod object is not callable`
+   修复：删掉多余的 @staticmethod
+
+3. `141330`：_command_from_request 的 cls 参数被吃掉了
+   修复：补回 cls 参数
+
+4. `142627`：ClarificationExecutor 创建时忘了传 AnswerEntityExtractor
+   修复：main.py 里构造 extractor 并传入 executor
+
+### 学到的知识
+
+1. **真实验收暴露的不是业务逻辑 bug，是接线 bug**：提取器、执行器、协调器的方法在 422 项测试里全过。
+   但在 main.py 里把它们串起来时，四个连接点每个都可能断——ID 冲突、装饰器冲突、参数缺失、依赖缺失。
+   接线是"集成"问题，测试是"单元"问题——两者覆盖不同层面。
+
+2. **@staticmethod 和 @classmethod 不能共存**：staticmethod 不自动传 self/cls，classmethod 自动传 cls。
+   两层装饰器叠加导致 Python 无法解析方法类型。
+
+3. **提取器不是"没实现"，是"没接入"**：REPLY-GATE-02 实现了 AnswerEntityExtractor 并用 Fake 测了，
+   REPLY-GATE-03 接入 main.py 时忘了传。零件造好了但没装上车——和之前 ClarificationExecutor 的"施工单开了没人执行"是同一种问题模式。
+

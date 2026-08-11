@@ -42,8 +42,8 @@ TODO → DESIGN → CODED → AUTO_OK → REAL_OK
 ## 2. 当前测试基线
 
 - 全量自动测试：`422 tests OK`（Python 3.11.9，2026-08-11）
-- 最近真实连续口述会话：`20260811_103134`
-- 最近真实会话已验证：影子观察”将溶液加热”输出missing_fields=('temperature','duration')、待确认动作=create、未执行；旧流程正常创建追问；结束命令正常退出
+- 最近真实连续口述会话：`20260811_143031`
+- 最近真实会话已验证：CREATE✅、ANSWER✅（extractor提取实体→已执行）；新老并行重复问题（已知）；LLM不稳定偶尔abstention（已知）；启动慢（MODEL-LOAD-02）
 
 恢复工作时先运行：
 
@@ -57,9 +57,7 @@ cd C:\Users\dahli\Desktop\asr_demo
 
 ## 3. 当前唯一下一项
 
-> 真实验收：`UNIFIED_SHADOW_EXECUTE_ENABLED=true` 开启执行，说多段话验证新老两套链路结果一致。验收通过后关闭旧 `ingest_analysis`，新链路成为唯一来源。
-
-COMMAND-03 ✅、REPLY-GATE-02 ✅、REPLY-GATE-03 ✅。三个前置任务全部完成，进入验收阶段。
+> 关掉旧 `ingest_analysis`，或先处理已知问题：新老并行重复、LLM 不稳定误判 abstention、启动慢。
 
 ## 3.1 当前执行看板
 
@@ -82,7 +80,7 @@ COMMAND-03 ✅、REPLY-GATE-02 ✅、REPLY-GATE-03 ✅。三个前置任务全�
 | 13 | `P1` | `INTENT-02-REPLY-GATE-01` ClarificationAction→ReplyCoordinator执行器 | `AUTO_OK` | ~ | 新增ClarificationExecutor+23项测试；ReplyCoordinator新增4个原子方法；影子会话`20260811_103134`验证新链输出create施工单但未执行；415项通过 |
 | 14 | `P0` | `COMMAND-03` 自然控制表达兼容 | `AUTO_OK` | 将”我先跳过/可先跳过”等自然表达匹配到精确命令 | DEFER新增安全前缀+跳过后缀规则；REVIEW新增自然表达式模式；Prompt新增uncertain兜底规则；3项parser+1项prompt测试；418项全量通过；未做真实影子复验 |
 | 15 | `P0` | `INTENT-02-REPLY-GATE-02` ANSWER施工单实体填充 | `AUTO_OK` | ~ | 新增AnswerEntityExtractor轻量LLM提取+answer_clarification方法；统一理解control分支可携带supplied_entities；Executor优先用施工单实体再fallback到extractor；422项通过 |
-| 16 | `P0` | `INTENT-02-REPLY-GATE-03` 影子位接入ClarificationExecutor | `AUTO_OK` | 影子观察时CREATE真的创建问题到ReplyCoordinator，旧流程并行跑 | ShadowObservation新增executed/execution_reason；observe()内接executor.execute()；新增UNIFIED_SHADOW_EXECUTE_ENABLED独立开关；422项通过；未真实验收 |
+| 16 | `P0` | `INTENT-02-REPLY-GATE-03` 影子位接入ClarificationExecutor | `REAL_OK` | ~ | 真实会话`20260811_143031`：CREATE✅+ANSWER✅（轻量extractor提取实体→已执行）；4轮修复（重复ID/cls参数/缺extractor）；422项通过 |
 
 ### 当前路线为什么这样排
 
@@ -610,7 +608,7 @@ Word/PDF 属于表现层增强，可以在系统 TTS 之后完成。
 | 2026-08-11 | 项目拆平+影子真实复验+推送远程 | 415项通过；推送到total/codex/asr-demo-unified-understanding | 会话`20260811_103134`影子正确输出create+('temperature','duration')；旧流程正常创建追问；keywords.txt编码修复（UTF-16 LE→UTF-8） | 下一项设为`COMMAND-03`自然控制表达兼容 |
 | 2026-08-11 | 完成COMMAND-03自然控制表达兼容 | 418项通过（+3项parser/评测测试） | DEFER新增6个安全前缀+跳过后缀；REVIEW新增2条自然模式；Prompt新增uncertain兜底 | 下一项`INTENT-02-REPLY-GATE-02`ANSWER实体填充 |
 | 2026-08-11 | 完成REPLY-GATE-02 ANSWER实体填充 | 422项通过 | AnswerEntityExtractor+answer_clarification；统一理解control分支supplied_entities优化 | 下一项`INTENT-02-REPLY-GATE-03`影子接入执行器 |
-| 2026-08-11 | 完成REPLY-GATE-03 影子位接入执行器 | 422项通过 | ShadowObservation新增executed字段；observe()内接executor.execute()；新增UNIFIED_SHADOW_EXECUTE_ENABLED开关；main.py创建executor并传入 | 下一项：真实验收 |
+| 2026-08-11 | 完成REPLY-GATE-03 影子位接入执行器 | 422项通过 | 真实会话`20260811_143031`验证CREATE+ANSWER闭环；4轮真实验收修复3个bug（重复ID/cls参数/缺extractor） | 下一项：关旧ingest_analysis或处理已知问题 |
 
 ## 7. 每轮结束时必须更新
 

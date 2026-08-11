@@ -4,9 +4,12 @@
 
 ## 1. 当前唯一下一项
 
-**真实验收：** 开启 `UNIFIED_SHADOW_EXECUTE_ENABLED=true`，运行 main.py，说多段话验证新老链路结果一致。
+关掉旧 `ingest_analysis` 让新链路成为唯一来源，或先处理已知问题：
+- 新老并行导致重复问题
+- LLM 偶尔误判 abstention（"将溶液加热"被当成 uncertain）
+- 启动慢（MODEL-LOAD-02）
 
-COMMAND-03、REPLY-GATE-02、REPLY-GATE-03 全部完成（422项测试）。三个前置任务构成完整闭环：自然表达路由 → ANSWER填充 → 执行器接入。
+COMMAND-03、REPLY-GATE-02、REPLY-GATE-03 全部 REAL_OK（422项测试+真实验收）。
 
 ## 2. 可复现基线
 
