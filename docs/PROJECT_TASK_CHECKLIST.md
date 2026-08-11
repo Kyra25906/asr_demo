@@ -409,7 +409,7 @@ A负责提供稳定消息协议和Mock数据，不应让前端直接读取 `main
 | `CLARIFY-TARGET-PERSIST-01` | `P1` | 持久化编号答复与目标问题的关联 | `TODO` | 当前答复原始ASR和结构化事件已保存，target_clarification_id只随内存后台任务传递；导出前需形成可审计关联记录 |
 | `COMMAND-01` | `P0` | 定义统一 InteractionCommand 与命令解析器 | `AUTO_OK` | 暂缓/回看已通过处理器接main；结束/肯定仍沿用旧入口，待后续统一迁移 |
 | `COMMAND-02` | `P0` | 命令匹配忽略 SenseVoice 句尾情绪符号 | `REAL_OK` | 会话20260808_144408中“这个先跳过。😔”成功暂缓问题1，“查看待确认问题。😔”成功回看；原文保留且均未进入实验事件 |
-| `COMMAND-03` | `P0` | 自然命令表达的保守兼容策略 | `AUTO_OK` | InteractionCommandParser新增DEFER安全前缀+后缀规则和REVIEW自然模式匹配；统一Prompt新增”缺乏足够依据时选uncertain”兜底；新增3项parser测试+1项prompt关键词；418项全量通过；ASR误听变体（如”看待确认”→VAD截音）不靠Parser修复 |
+| `COMMAND-03` | `P0` | 自然命令表达的保守兼容策略 | `AUTO_OK` | Parser新增安全前缀+后缀和自然模式；Prompt新增uncertain兜底；418项通过；已知限制：如果用户在实验台前指着步骤列表说”这个先跳过”，会被判为DEFER——目前语音交互场景下概率极低，若复现则删对应前缀即可 |
 | `CLARIFY-MAIN-01` | `P1` | 暂缓和回看命令接入main | `REAL_OK` | 会话20260808_141435中准确命令各执行2次；原始ASR已保存，命令未进入实验事件 |
 
 ### F. 确认答复持久化与主流程
