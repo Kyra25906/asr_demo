@@ -12,6 +12,7 @@ from src.core.intent_classifier import (
     IntentCandidateStatus,
     IntentClassifierError,
 )
+from src.core.interaction_command import InteractionCommandType
 from src.llm.schemas import (
     ExperimentEntities,
     ExperimentEvent,
@@ -19,6 +20,13 @@ from src.llm.schemas import (
     LLMAnalysisResult,
 )
 from src.llm.validation import LLMOutputValidationError, parse_analysis
+
+
+_SUPPLIED_ENTITY_FIELDS = frozenset({
+    "action", "object", "instrument",
+    "amount_value", "amount_unit", "concentration",
+    "temperature", "duration", "condition", "observation",
+})
 
 
 class UnifiedUnderstandingError(ValueError):
@@ -77,10 +85,17 @@ class ExperimentUnderstanding:
 @dataclass(frozen=True)
 class ControlUnderstanding:
     intent: IntentCandidate
+    supplied_entities: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if self.intent.status != IntentCandidateStatus.MATCHED:
             raise ValueError("control分支必须包含matched意图候选。")
+        if self.supplied_entities and self.intent.command_type not in {
+            InteractionCommandType.TARGETED_ANSWER,
+        }:
+            raise ValueError(
+                "只有targeted_answer可携带supplied_entities。"
+            )
 
 
 @dataclass(frozen=True)
@@ -148,6 +163,32 @@ def _require_object(value: Any, location: str) -> dict[str, Any]:
     return value
 
 
+def _parse_supplied_entities(raw: Any) -> tuple[str, ...]:
+    """从LLM返回的entities对象中提取非空字段名。"""
+
+    if raw is None:
+        return ()
+    if not isinstance(raw, dict):
+        raise UnifiedUnderstandingError("supplied_entities必须是对象或null。")
+    extra = sorted(set(raw) - _SUPPLIED_ENTITY_FIELDS)
+    if extra:
+        raise UnifiedUnderstandingError(
+            f"supplied_entities包含未知字段：{extra}"
+        )
+    supplied: list[str] = []
+    for field_name in _SUPPLIED_ENTITY_FIELDS:
+        value = raw.get(field_name)
+        if value is None:
+            continue
+        if not isinstance(value, str):
+            raise UnifiedUnderstandingError(
+                f"supplied_entities.{field_name}必须是字符串或null。"
+            )
+        if value.strip():
+            supplied.append(field_name)
+    return tuple(supplied)
+
+
 def parse_unified_understanding(
     content: str,
     *,
@@ -199,11 +240,14 @@ def parse_unified_understanding(
         branch = _require_object(data["control"], "control分支")
         _require_exact_fields(branch, CONTROL_FIELDS, "control分支")
         intent_data = _require_object(branch["intent"], "intent")
+        # supplied_entities 在 intent 中但不在 IntentCandidate 合同内，先提取
+        raw_entities = intent_data.pop("supplied_entities", None)
         try:
             intent = IntentCandidate.from_mapping(intent_data)
-            control = ControlUnderstanding(intent)
         except (IntentClassifierError, ValueError) as error:
             raise UnifiedUnderstandingError(str(error)) from error
+        supplied = _parse_supplied_entities(raw_entities)
+        control = ControlUnderstanding(intent, supplied_entities=supplied)
         return UnifiedUnderstandingResult(
             raw_text=expected_raw_text,
             control=control,

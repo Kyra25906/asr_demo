@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 
 from src.core.clarification_acceptance import (
@@ -10,6 +11,61 @@ from src.core.clarification_acceptance import (
     ClarificationMutationPermission,
 )
 from src.core.reply_coordinator import ReplyCoordinator
+
+
+_ANSWER_ENTITY_EXTRACTION_PROMPT = """\
+从用户回答中提取实验实体字段的值。只返回一个JSON对象，不要输出其他内容。
+每个字段的值只能是非空字符串或null；数值也保留为字符串。
+{
+  "action": null,
+  "object": null,
+  "instrument": null,
+  "amount_value": null,
+  "amount_unit": null,
+  "concentration": null,
+  "temperature": null,
+  "duration": null,
+  "condition": null,
+  "observation": null
+}"""
+
+_ENTITY_FIELDS = frozenset({
+    "action", "object", "instrument",
+    "amount_value", "amount_unit", "concentration",
+    "temperature", "duration", "condition", "observation",
+})
+
+
+class AnswerEntityExtractor:
+    """用轻量LLM调用从用户回答中提取实体字段名。"""
+
+    def __init__(self, llm_client) -> None:
+        self._client = llm_client
+
+    def extract(self, answer_text: str) -> set[str]:
+        """返回 answer_text 中出现的非空实体字段名集合。"""
+
+        user_prompt = json.dumps(
+            {"answer_text": answer_text},
+            ensure_ascii=False,
+        )
+        generation = self._client.generate_json(
+            system_prompt=_ANSWER_ENTITY_EXTRACTION_PROMPT,
+            user_prompt=user_prompt,
+        )
+        try:
+            data = json.loads(generation.content)
+        except json.JSONDecodeError:
+            return set()
+        if not isinstance(data, dict):
+            return set()
+
+        supplied: set[str] = set()
+        for field_name in _ENTITY_FIELDS:
+            value = data.get(field_name)
+            if isinstance(value, str) and value.strip():
+                supplied.add(field_name)
+        return supplied
 
 
 _STATE_CHANGING_ACTIONS = frozenset({
@@ -39,8 +95,13 @@ class ClarificationExecutionResult:
 class ClarificationExecutor:
     """只把已验证的ClarificationAction翻译成ReplyCoordinator调用。"""
 
-    def __init__(self, reply_coordinator: ReplyCoordinator) -> None:
+    def __init__(
+        self,
+        reply_coordinator: ReplyCoordinator,
+        entity_extractor: AnswerEntityExtractor | None = None,
+    ) -> None:
         self._coordinator = reply_coordinator
+        self._entity_extractor = entity_extractor
 
     def execute(
         self,
@@ -164,15 +225,77 @@ class ClarificationExecutor:
                 reason=str(error),
             )
 
+        supplied_fields: set[str] = set()
+        if action.supplied_entity_fields:
+            # 统一理解在一次LLM调用中已提取实体 → 直接使用
+            supplied_fields = set(action.supplied_entity_fields)
+        elif self._entity_extractor is not None:
+            # 精确路径 → 轻量LLM提取
+            supplied_fields = self._entity_extractor.extract(
+                action.answer_text
+            )
+        else:
+            return self._result(
+                action,
+                state_changed=False,
+                answer_text_received=True,
+                reason=(
+                    f"收到对问题 {target.display_number} 的答复"
+                    f"\"{action.answer_text}\"，"
+                    "但未配置实体提取器，未修改待确认状态。"
+                ),
+            )
+
+        if not supplied_fields:
+            # extractor 返回空或 supplied_entity_fields 为空 → 无字段可填
+            return self._result(
+                action,
+                state_changed=False,
+                answer_text_received=True,
+                reason=(
+                    f"收到对问题 {target.display_number} 的答复"
+                    f"\"{action.answer_text}\"，"
+                    "但未从中提取到实体字段。"
+                ),
+            )
+
+        if not supplied_fields:
+            return self._result(
+                action,
+                state_changed=False,
+                answer_text_received=True,
+                reason=(
+                    f"收到对问题 {target.display_number} 的答复"
+                    f"\"{action.answer_text}\"，"
+                    "但未从中提取到实体字段。"
+                ),
+            )
+
+        try:
+            updated = self._coordinator.answer_clarification(
+                clarification_id=action.target_clarification_id,
+                expected_revision=action.expected_revision,
+                segment_id=action.segment_id,
+                supplied_fields=supplied_fields,
+            )
+        except ValueError as error:
+            return self._result(
+                action,
+                state_changed=False,
+                reason=str(error),
+            )
+
         return self._result(
             action,
-            state_changed=False,
+            state_changed=(updated != target),
             answer_text_received=True,
             reason=(
-                f"收到对问题 {target.display_number} 的答复"
-                f"\"{action.answer_text}\"，"
-                "但动作未携带解析后的实体字段，未修改待确认状态。"
+                f"已将对问题 {updated.display_number} 的答复的实体字段"
+                f" {sorted(supplied_fields)} 填入。"
+                f"{' 问题已解决。' if not updated.is_unresolved else ''}"
             ),
+            affected_clarification_id=updated.clarification_id,
+            affected_display_number=updated.display_number,
         )
 
     def _validate_action(self, action: ClarificationAction) -> None:

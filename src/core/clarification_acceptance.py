@@ -122,6 +122,7 @@ class ClarificationAction:
     question: str | None = None
     missing_fields: tuple[str, ...] = ()
     requires_confirmation: bool = False
+    supplied_entity_fields: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         for value, name in (
@@ -174,6 +175,21 @@ class ClarificationAction:
         elif self.answer_text is not None:
             raise ValueError("非回答动作不能夹带answer_text。")
 
+        if self.supplied_entity_fields:
+            if self.action_type not in {
+                ClarificationActionType.ANSWER,
+                ClarificationActionType.REJECT_SUGGESTION,
+            }:
+                raise ValueError(
+                    "只有ANSWER/REJECT_SUGGESTION可携带supplied_entity_fields。"
+                )
+            if len(self.supplied_entity_fields) != len(
+                set(self.supplied_entity_fields)
+            ):
+                raise ValueError("supplied_entity_fields不得重复。")
+            if any(not f.strip() for f in self.supplied_entity_fields):
+                raise ValueError("supplied_entity_fields不能包含空字段名。")
+
         if self.action_type == ClarificationActionType.CREATE:
             if self.question is None or not self.question.strip():
                 raise ValueError("CREATE动作必须包含问题文本。")
@@ -214,6 +230,8 @@ class ClarificationActionPlanner:
             raise ValueError("待确认动作只能接收上下文分派或安全弃权。")
 
         command = cls._command_from_request(request)
+        # LLM 路径可能已在一次调用中完成实体提取
+        supplied_entities = cls._extract_supplied_entities(request)
         command_type = command.command_type
         if command_type == InteractionCommandType.REVIEW_PENDING:
             return cls._build(
@@ -249,6 +267,7 @@ class ClarificationActionPlanner:
                 target,
                 action_type,
                 answer_text=command.answer_text or command.raw_text,
+                supplied_entity_fields=supplied_entities,
                 reason="准备处理当前问题的明确确认答复。",
             )
         if command_type == InteractionCommandType.TARGETED_ANSWER:
@@ -273,6 +292,7 @@ class ClarificationActionPlanner:
                 target,
                 action_type,
                 answer_text=command.answer_text,
+                supplied_entity_fields=supplied_entities,
                 reason="准备把明确编号的答复交给目标问题。",
             )
         raise ValueError("该控制类型不属于待确认动作采用范围。")
@@ -318,6 +338,20 @@ class ClarificationActionPlanner:
         )
 
     @staticmethod
+    @classmethod
+    def _extract_supplied_entities(
+        cls,
+        request: DispatchExecutionRequest,
+    ) -> tuple[str, ...]:
+        route = request.plan.route_result
+        if route.exact_command is not None:
+            return ()  # 精确路径没有 LLM 提取的实体
+        understanding = route.understanding_outcome.value
+        if understanding.control is not None:
+            return understanding.control.supplied_entities
+        return ()
+
+    @classmethod
     def _command_from_request(
         request: DispatchExecutionRequest,
     ) -> InteractionCommand:
@@ -343,6 +377,7 @@ class ClarificationActionPlanner:
         *,
         reason: str,
         answer_text: str | None = None,
+        supplied_entity_fields: tuple[str, ...] = (),
     ) -> ClarificationAction:
         if target is None:
             return cls._no_action(request, "当前没有符合条件的目标问题。")
@@ -353,6 +388,7 @@ class ClarificationActionPlanner:
             requires_evidence_persistence=True,
             target=target,
             answer_text=answer_text,
+            supplied_entity_fields=supplied_entity_fields,
         )
 
     @staticmethod
@@ -364,6 +400,7 @@ class ClarificationActionPlanner:
         requires_evidence_persistence: bool,
         target: PendingClarification | None = None,
         answer_text: str | None = None,
+        supplied_entity_fields: tuple[str, ...] = (),
     ) -> ClarificationAction:
         return ClarificationAction(
             request_id=request.request_id,
@@ -374,6 +411,7 @@ class ClarificationActionPlanner:
             mutation_permission=_ACTION_PERMISSIONS[action_type],
             reason=reason,
             requires_evidence_persistence=requires_evidence_persistence,
+            supplied_entity_fields=supplied_entity_fields,
             target_clarification_id=(
                 target.clarification_id if target is not None else None
             ),

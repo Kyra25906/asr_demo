@@ -8,10 +8,26 @@ from src.core.clarification_acceptance import (
     ClarificationMutationPermission,
 )
 from src.core.clarification_executor import (
+    AnswerEntityExtractor,
     ClarificationExecutionResult,
     ClarificationExecutor,
 )
 from src.core.reply_coordinator import ReplyCoordinator
+
+
+class FakeEntityExtractor:
+    """测试用实体提取器——不调 LLM，返回预设字段名。"""
+
+    def __init__(self, fields=None, error=None):
+        self.fields = fields or set()
+        self.error = error
+        self.calls = []
+
+    def extract(self, answer_text: str) -> set[str]:
+        self.calls.append(answer_text)
+        if self.error:
+            raise self.error
+        return set(self.fields)
 
 
 def _action(**overrides):
@@ -356,7 +372,7 @@ class AnswerTests(unittest.TestCase):
 
         self.assertFalse(result.state_changed)
         self.assertTrue(result.answer_text_received)
-        self.assertIn("未携带", result.reason)
+        self.assertIn("未配置实体提取器", result.reason)
 
     def test_answer_rejects_stale_revision(self):
         target = self.coordinator.current_clarification()
@@ -410,6 +426,100 @@ class AnswerTests(unittest.TestCase):
         result = self.executor.execute(action)
 
         self.assertFalse(result.state_changed)
+
+    def test_answer_with_extractor_fills_missing_fields(self):
+        target = self.coordinator.current_clarification()
+        extractor = FakeEntityExtractor({"temperature"})
+        executor = ClarificationExecutor(
+            self.coordinator,
+            entity_extractor=extractor,
+        )
+        action = _action(
+            action_type=ClarificationActionType.ANSWER,
+            mutation_permission=ClarificationMutationPermission.PREPARE_UPDATE,
+            requires_evidence_persistence=True,
+            target_clarification_id=target.clarification_id,
+            target_display_number=target.display_number,
+            expected_revision=target.revision,
+            answer_text="60摄氏度",
+        )
+        result = executor.execute(action)
+
+        self.assertTrue(result.state_changed)
+        self.assertTrue(result.answer_text_received)
+        self.assertEqual(len(extractor.calls), 1)
+        self.assertEqual(extractor.calls[0], "60摄氏度")
+
+        updated = self.coordinator._find_clarification(target.clarification_id)
+        self.assertEqual(updated.missing_fields, ("duration",))
+        self.assertTrue(updated.is_unresolved)
+
+    def test_answer_with_extractor_resolves_completely(self):
+        target = self.coordinator.current_clarification()
+        extractor = FakeEntityExtractor({"temperature", "duration"})
+        executor = ClarificationExecutor(
+            self.coordinator,
+            entity_extractor=extractor,
+        )
+        action = _action(
+            action_type=ClarificationActionType.ANSWER,
+            mutation_permission=ClarificationMutationPermission.PREPARE_UPDATE,
+            requires_evidence_persistence=True,
+            target_clarification_id=target.clarification_id,
+            target_display_number=target.display_number,
+            expected_revision=target.revision,
+            answer_text="60摄氏度加热10分钟",
+        )
+        result = executor.execute(action)
+
+        self.assertTrue(result.state_changed)
+        self.assertIn("问题已解决", result.reason)
+
+        updated = self.coordinator._find_clarification(target.clarification_id)
+        self.assertFalse(updated.is_unresolved)
+
+    def test_answer_with_extractor_empty_result_no_change(self):
+        target = self.coordinator.current_clarification()
+        extractor = FakeEntityExtractor(set())  # returns empty
+        executor = ClarificationExecutor(
+            self.coordinator,
+            entity_extractor=extractor,
+        )
+        action = _action(
+            action_type=ClarificationActionType.ANSWER,
+            mutation_permission=ClarificationMutationPermission.PREPARE_UPDATE,
+            requires_evidence_persistence=True,
+            target_clarification_id=target.clarification_id,
+            target_display_number=target.display_number,
+            expected_revision=target.revision,
+            answer_text="不知道",
+        )
+        result = executor.execute(action)
+
+        self.assertFalse(result.state_changed)
+        self.assertTrue(result.answer_text_received)
+        self.assertIn("未从中提取到实体字段", result.reason)
+
+    def test_answer_with_extractor_rejects_stale_revision(self):
+        target = self.coordinator.current_clarification()
+        extractor = FakeEntityExtractor({"temperature"})
+        executor = ClarificationExecutor(
+            self.coordinator,
+            entity_extractor=extractor,
+        )
+        action = _action(
+            action_type=ClarificationActionType.ANSWER,
+            mutation_permission=ClarificationMutationPermission.PREPARE_UPDATE,
+            requires_evidence_persistence=True,
+            target_clarification_id=target.clarification_id,
+            target_display_number=target.display_number,
+            expected_revision=target.revision + 1,
+            answer_text="60摄氏度",
+        )
+        result = executor.execute(action)
+
+        self.assertFalse(result.state_changed)
+        self.assertIn("版本已变更", result.reason)
 
 
 class SafetyGateTests(unittest.TestCase):

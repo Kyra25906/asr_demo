@@ -262,6 +262,37 @@ class ReplyCoordinator:
         self._clarifications[index] = updated
         return updated
 
+    def answer_clarification(
+        self,
+        *,
+        clarification_id: str,
+        expected_revision: int,
+        segment_id: int,
+        supplied_fields: set[str],
+    ) -> PendingClarification:
+        """用 ANSWER 携带的实体字段填充目标问题的 missing_fields。"""
+
+        target = self._find_clarification(clarification_id)
+        if target is None:
+            raise ValueError(f"未找到待确认项：{clarification_id}")
+        if target.revision != expected_revision:
+            raise ValueError(
+                f"待确认项版本已变更（期望 {expected_revision}，"
+                f"当前 {target.revision}），拒绝过期答复。"
+            )
+        if not target.is_active:
+            raise ValueError("只能答复 ACTIVE 状态的待确认项。")
+        if not supplied_fields:
+            raise ValueError("supplied_fields 不能为空。")
+
+        updated = target.supply_fields(supplied_fields, segment_id=segment_id)
+        if updated == target:
+            return target  # 没有字段匹配，不修改
+
+        index = self._clarifications.index(target)
+        self._clarifications[index] = updated
+        return updated
+
     def _find_clarification(
         self,
         clarification_id: str,

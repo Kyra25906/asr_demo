@@ -64,18 +64,21 @@ should_ask_follow_up必须为true且follow_up_question必须非空；否则二�
 
 control分支必须且只能是：
 {
-  "intent": {
-    "status": "matched",
-    "command_type": "review_pending | defer_current | affirm | deny | targeted_answer | end_session",
-    "target_question_number": null,
-    "answer_text": null,
-    "reason": null
+  “intent”: {
+    “status”: “matched”,
+    “command_type”: “review_pending | defer_current | affirm | deny | targeted_answer | end_session”,
+    “target_question_number”: null,
+    “answer_text”: null,
+    “reason”: null,
+    “supplied_entities”: null
   }
 }
 
 控制规则：只返回候选，不声称已执行。只有targeted_answer可包含正整数问题编号；只有affirm、
-deny、targeted_answer可包含用户明确说出的answer_text。“结束离心”“加热结束”等实验过程描述
-属于experiment，不是end_session。
+deny、targeted_answer可包含用户明确说出的answer_text。”结束离心””加热结束”等实验过程描述
+属于experiment，不是end_session。只有targeted_answer可包含supplied_entities对象，
+字段与experiment分支的entities相同（10个字段，全部可为null或非空字符串）；
+其他command_type必须保持supplied_entities=null。
 
 uncertain分支必须且只能是：
 {"reason": "非空的简短弃权原因"}
