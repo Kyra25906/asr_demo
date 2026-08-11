@@ -1,26 +1,21 @@
 # asr_demo 当前工作区交接说明
 
-最后整理：2026-08-10
+最后整理：2026-08-11
 
 ## 1. 当前唯一下一项
 
-执行 `INTENT-02-UNIFIED-PROMPT-MISSING-FIELDS-01`：把旧实验 Prompt 中“操作缺少对当前实验有意义的体积、浓度、温度或时间时登记 `missing_fields`”迁入统一 Prompt。
+`INTENT-02-UNIFIED-PROMPT-MISSING-FIELDS-01` **已完成**（REAL_OK）。
 
-本轮只调整统一 Prompt 的能力说明、Prompt 合同测试和固定 Fake 回归。自动测试通过后，按教学约定主动使用真实 DeepSeek 复验“将溶液加热”，目标影子摘要为：
-
-```text
-missing_fields=('temperature', 'duration')
-follow_up_required=True
-clarification_action=create
-```
-
-`create` 仍只是计划，不得提交到 `ReplyCoordinator`。
+下一项待用户决定，候选：
+- `INTENT-02-REPLY-GATE-01`（P1）：把已采用 `ClarificationAction` 接入 `ReplyCoordinator`
+- 提交 PR 到 total 远程仓库
+- AUDIO-PREROLL-REAL-01 句首预缓冲真实验收
 
 ## 2. 可复现基线
 
 - 真实项目：`C:\Users\dahli\Desktop\asr_demo`
 - 正式解释器：`.venv` 中的 Python 3.11.9
-- 全量自动测试：`392 tests OK`（2026-08-10重新运行）
+- 全量自动测试：`392 tests OK`（2026-08-11重新运行）
 - 当前 Git 分支：`main`
 - 当前远程：`origin = https://github.com/Kyra25906/asr_demo.git`
 - 工作区存在累计未提交修改，不得覆盖、回退或把无关文件混入清理。
@@ -83,10 +78,16 @@ git diff --check
 ### 新旧追问差异
 
 - 会话：`20260810_180242`
-- 真实 ASR：“将溶液加热。”
+- 真实 ASR：”将溶液加热。”
 - 旧链：`missing_fields=[temperature, duration]`，生成追问。
 - 新统一链及保存证据重放：`missing_fields=()`、`follow_up_required=False`、`no_action`。
-- 根因不是合同矛盾：统一 Prompt 缺少“何时登记缺失字段”的业务能力规则。
+- 根因不是合同矛盾：统一 Prompt 缺少”何时登记缺失字段”的业务能力规则。
+
+### 统一Prompt缺失字段能力修复
+
+- 修改：`unified_prompts.py` 实验规则新增一行，与旧 `ANALYSIS_SYSTEM_PROMPT` 第4条规则文字一致。
+- 真实 DeepSeek 复验”将溶液加热。”：`missing_fields=['temperature','duration']`、`should_ask_follow_up=True`、`follow_up_question=”加热到什么温度？需要加热多长时间？”`、降级=False、1次成功2.32秒。
+- 状态：`REAL_OK`。
 
 ## 5. 当前工作区构成
 

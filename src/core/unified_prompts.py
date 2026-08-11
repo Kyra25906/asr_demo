@@ -53,7 +53,8 @@ experiment分支必须且只能是：
 
 实验规则：所有entities字段都只能是字符串或null，数值也必须保留为字符串；events必须为非空
 数组；不得猜测、补造或换算事实；上下文只帮助理解本轮原文，
-不得把旧事实重复输出为本轮事件。任何missing_fields非空或needs_confirmation=true时，
+不得把旧事实重复输出为本轮事件。操作缺少对当前实验有意义的体积、浓度、温度或时间时，
+写入missing_fields并生成一个简短追问。任何missing_fields非空或needs_confirmation=true时，
 should_ask_follow_up必须为true且follow_up_question必须非空；否则二者必须为false和null。
 
 control分支必须且只能是：

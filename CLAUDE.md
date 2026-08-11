@@ -1,14 +1,26 @@
 # asr_demo 项目约定
 
+## 每轮收尾硬性检查（代码写完 → 做完以下 5 步才算本轮结束）
+
+```
+□ 1. 全量测试通过（..\.venv\Scripts\python.exe -B -m unittest discover）
+□ 2. 更新 PROJECT_TASK_CHECKLIST.md（任务状态 + 维护日志 + 测试基线）
+□ 3. 追加 LEARNING_REVIEW_FROM_DEVELOPMENT.md（本轮知识）
+□ 4. 更新 NEXT_SESSION_HANDOFF_2026-08-09.md（最近真实验收 + 基线）
+□ 5. 用完整 7 段教学格式做总结（目的/技术路线/设计原因/实现/知识/验收/下一步）
+```
+
+以上 5 步和写代码、跑测试一样属于"本轮工作"，不是"做完后再想要不要做"。
+
 ## 必须维护的三份文档
 
 每轮开发或每天结束工作时，**必须**更新以下文件：
 
 | 文档 | 路径 | 更新时机 |
 |---|---|---|
-| **任务清单** | `asr_demo/docs/PROJECT_TASK_CHECKLIST.md` | 每轮状态变更时 |
-| **学习日志** | `asr_demo/LEARNING_REVIEW_FROM_DEVELOPMENT.md` | 每轮结束后追加 |
-| **交接文档** | `asr_demo/docs/NEXT_SESSION_HANDOFF_2026-08-09.md` | 功能闭环完成或当天工作结束时 |
+| **任务清单** | `docs/PROJECT_TASK_CHECKLIST.md` | 每轮状态变更时 |
+| **学习日志** | `LEARNING_REVIEW_FROM_DEVELOPMENT.md` | 每轮结束后追加 |
+| **交接文档** | `docs/NEXT_SESSION_HANDOFF_2026-08-09.md` | 功能闭环完成或当天工作结束时 |
 
 注意：这是可执行要求，不是建议。不要只在做完后才想"要不要更新"——更新这三份文档本身就是每轮工作的一部分。
 

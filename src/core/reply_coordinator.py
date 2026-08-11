@@ -173,6 +173,106 @@ class ReplyCoordinator:
 
         return None
 
+    def register_clarification(
+        self,
+        *,
+        segment_id: int,
+        raw_text: str,
+        question: str,
+        missing_fields: tuple[str, ...] = (),
+        requires_confirmation: bool = False,
+    ) -> PendingClarification:
+        """从已有字段直接创建一个待确认问题，不从 LLMAnalysisResult 推导。"""
+
+        if segment_id <= 0:
+            raise ValueError("segment_id 必须大于 0。")
+        if not raw_text.strip():
+            raise ValueError("raw_text 不能为空。")
+        if not question or not question.strip():
+            raise ValueError("question 不能为空。")
+        if not missing_fields and not requires_confirmation:
+            raise ValueError(
+                "missing_fields 和 requires_confirmation 至少需要一个。"
+            )
+
+        clarification = PendingClarification(
+            clarification_id=f"segment-{segment_id}",
+            display_number=self._next_display_number,
+            source_segment_id=segment_id,
+            source_raw_text=raw_text,
+            question=question,
+            missing_fields=missing_fields,
+            requires_confirmation=requires_confirmation,
+        )
+        self._clarifications.append(clarification)
+        self._next_display_number += 1
+        return clarification
+
+    def defer_clarification(
+        self,
+        *,
+        clarification_id: str,
+        expected_revision: int,
+        segment_id: int,
+    ) -> PendingClarification:
+        """按 clarification_id 暂缓一个 ACTIVE 问题；版本不匹配则拒绝。"""
+
+        target = self._find_clarification(clarification_id)
+        if target is None:
+            raise ValueError(f"未找到待确认项：{clarification_id}")
+        if target.revision != expected_revision:
+            raise ValueError(
+                f"待确认项版本已变更（期望 {expected_revision}，"
+                f"当前 {target.revision}），拒绝过期暂缓。"
+            )
+        if not target.is_active:
+            raise ValueError("只能暂缓 ACTIVE 状态的待确认项。")
+
+        updated = target.defer(segment_id=segment_id)
+        index = self._clarifications.index(target)
+        self._clarifications[index] = updated
+        if self._current_clarification_id == clarification_id:
+            self._current_clarification_id = None
+        return updated
+
+    def confirm_clarification(
+        self,
+        *,
+        clarification_id: str,
+        expected_revision: int,
+        segment_id: int,
+    ) -> PendingClarification:
+        """按 clarification_id 确认一个需要确认的问题；版本不匹配则拒绝。"""
+
+        target = self._find_clarification(clarification_id)
+        if target is None:
+            raise ValueError(f"未找到待确认项：{clarification_id}")
+        if target.revision != expected_revision:
+            raise ValueError(
+                f"待确认项版本已变更（期望 {expected_revision}，"
+                f"当前 {target.revision}），拒绝过期确认。"
+            )
+        if not target.is_active:
+            raise ValueError("只能确认 ACTIVE 状态的待确认项。")
+        if not target.requires_confirmation:
+            raise ValueError("待确认项不需要确认。")
+
+        updated = target.confirm(segment_id=segment_id)
+        index = self._clarifications.index(target)
+        self._clarifications[index] = updated
+        return updated
+
+    def _find_clarification(
+        self,
+        clarification_id: str,
+    ) -> PendingClarification | None:
+        """按 clarification_id 查找，列表很小不需要索引。"""
+
+        for clarification in self._clarifications:
+            if clarification.clarification_id == clarification_id:
+                return clarification
+        return None
+
     def defer_current(
         self,
         *,
@@ -396,18 +496,13 @@ class ReplyCoordinator:
             for event in analysis.events
         )
 
-        clarification = PendingClarification(
-            clarification_id=f"segment-{segment_id}",
-            display_number=self._next_display_number,
-            source_segment_id=segment_id,
-            source_raw_text=raw_text,
+        self.register_clarification(
+            segment_id=segment_id,
+            raw_text=raw_text,
             question=question,
             missing_fields=missing_fields,
             requires_confirmation=requires_confirmation,
         )
-
-        self._clarifications.append(clarification)
-        self._next_display_number += 1
 
     @staticmethod
     def _collect_supplied_fields(
