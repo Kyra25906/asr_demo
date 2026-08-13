@@ -1,6 +1,11 @@
 # asr_demo 本地运行环境
 
-最后验证：2026-08-10
+最后验证：2026-08-12（Python 3.11.9 环境正常）
+
+> 当前状态：基础解释器和 `.venv` 均为 Python 3.11.9。2026-08-12 曾在受限
+> 沙箱内出现“拒绝访问/无法创建进程”，在允许执行项目解释器后验证正常，证明问题来自
+> 执行权限而不是虚拟环境损坏。不要用系统 Python 3.14 直接加载 Python 3.11
+> 虚拟环境中的 C 扩展依赖。
 
 ## 1. 统一版本
 
@@ -13,13 +18,14 @@ Python 3.11.9 64-bit
 
 Python 3.14 环境仅保留在 `.venv-py314` 作为备用实验环境，不作为项目验收环境。
 
-## 2. 创建环境
+## 2. 恢复或创建环境
 
-安装 Python 3.11.9 后，在项目目录执行：
+先安装或恢复 Python 3.11.9 64-bit，再在项目目录执行。不要用 Python 3.14
+直接加载旧 `.venv\Lib\site-packages`，否则 `_cffi_backend` 等二进制扩展会不兼容。
 
 ```powershell
 C:\Users\dahli\AppData\Local\Programs\Python\Python311\python.exe `
-    -m venv .venv
+    -m venv --upgrade .venv
 
 .\.venv\Scripts\python.exe -m pip install --upgrade pip
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
@@ -52,16 +58,27 @@ UNIFIED_SHADOW_ENABLED=false
     -v
 ```
 
-2026-08-10 的已验证基线：
+2026-08-12 的当前已验证基线：
 
 ```text
+核心依赖 import OK
 src.main import OK
-Ran 392 tests
+Ran 422 tests
 OK
-VAD模型加载成功
-唤醒词模型加载成功
-SenseVoice与FSMN-VAD模型加载成功
 ```
+
+本次验证命令与结果：
+
+```text
+基础 Python：Python 3.11.9
+.venv Python：Python 3.11.9
+dotenv/sherpa_onnx/sounddevice/soundfile/funasr/modelscope/torch 导入成功
+src.main 导入成功（冷启动约 113 秒）
+Ran 422 tests in 1.562s — OK
+```
+
+注意：受限执行环境中的 `Access denied` 不应直接判定 `.venv` 损坏。先在获准的项目
+执行边界中运行 `python --version`；只有解释器本身仍失败，才进入重建虚拟环境流程。
 
 ## 5. 模型缓存说明
 

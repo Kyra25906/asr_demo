@@ -1,6 +1,10 @@
 # 语音实验助手输出与展示策略
 
-更新时间：2026-08-06
+首次定义：2026-08-06；最后复核：2026-08-12
+
+> 本文件只定义稳定的输出职责和展示政策。任务状态与实施顺序以
+> `PROJECT_TASK_CHECKLIST.md` 为准；当前接线仍主要在 `main.py`，尚未完成
+> PresentationCoordinator 集成。
 
 依据真实会话：`20260806_203255`
 
@@ -257,7 +261,7 @@ utterance 4 → 实验步骤3
 
 | 职责 | 负责模块 | 不负责的内容 |
 |---|---|---|
-| 将 ASR 文本识别为结束、暂缓、查看、肯定、否定、指定问题等命令 | `InteractionCommandParser`（待新增） | 不修改问题状态，不打印，不播放语音 |
+| 将 ASR 文本识别为结束、暂缓、查看、肯定、否定、指定问题等命令 | `InteractionCommandParser`（已实现） | 不修改问题状态，不打印，不播放语音 |
 | 保存待确认问题及其 ACTIVE、DEFERRED、RESOLVED、EXPIRED 状态 | `PendingClarification` | 不决定界面颜色和播报时机 |
 | 将用户答复匹配到具体问题并提交状态变化 | `ReplyCoordinator` | 不直接打印，不调用 TTS |
 | 定义消息语义、优先级、渠道和朗读策略 | `PresentationMessage` | 不决定当前时刻能否播放 |
@@ -268,11 +272,12 @@ utterance 4 → 实验步骤3
 | 保存原始口述、事件、确认答复和问题状态变化 | storage 层 | 不控制展示顺序 |
 | 串联上述模块和处理资源生命周期 | `main.py` | 不长期保存命令词表和复杂业务判断 |
 
-### 当前命令规则所在位置
+### 当前命令规则所在位置（2026-08-12）
 
-- 结束实验命令集合与规范化匹配：`src/main.py`；
+- 结束实验、暂缓、查看、肯定、否定和指定问题的规范化与精确解析：`src/core/interaction_command.py`；
 - 肯定答复保守匹配：`src/core/reply_coordinator.py`；
-- 跳过、稍后查看和指定问题：目前仅完成设计，尚无可执行解析器；
+- 暂缓/回看处理：`src/core/clarification_command_handler.py`；指定编号答复：`src/core/targeted_clarification.py`；
+- 新统一链动作执行：`src/core/clarification_executor.py`；旧 main 门卫仍待统一清理；
 - 输出渠道和是否允许朗读：`src/core/presentation_message.py`；
 - 当前终端输出顺序：仍主要位于 `src/main.py`，尚未迁移到展示协调器。
 

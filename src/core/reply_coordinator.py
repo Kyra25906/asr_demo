@@ -20,6 +20,7 @@ class CoordinatedReply:
     """协调器交给终端或未来 TTS 层的一条回复。"""
 
     clarification_id: str
+    display_number: int
     source_segment_id: int
     source_raw_text: str
     text: str
@@ -128,6 +129,7 @@ class ReplyCoordinator:
 
         return CoordinatedReply(
             clarification_id=selected.clarification_id,
+            display_number=selected.display_number,
             source_segment_id=selected.source_segment_id,
             source_raw_text=selected.source_raw_text,
             text=self._build_reply_text(selected),

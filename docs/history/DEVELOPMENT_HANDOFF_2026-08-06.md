@@ -1,5 +1,9 @@
 # asr_demo 开发暂停交接记录
 
+> **历史快照，已冻结。** 本文件只描述 2026-08-06 当时的状态，其中测试数、下一项、
+> 文件结构和未完成功能均可能过期。当前工作请从 `docs/README.md` 开始，并以
+> `PROJECT_TASK_CHECKLIST.md` 和 `NEXT_SESSION_HANDOFF_2026-08-09.md` 为准。
+
 更新时间：2026-08-06
 
 真实项目：`C:\Users\dahli\Desktop\asr_demo`

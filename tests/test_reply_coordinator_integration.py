@@ -93,7 +93,7 @@ class ReplyCoordinatorIntegrationTests(unittest.TestCase):
             )
 
         self.assertEqual(
-            first_output.getvalue().count("\n待确认："),
+            first_output.getvalue().count("\n待确认（问题"),
             1,
         )
         self.assertIn("关于第 1 段", first_output.getvalue())

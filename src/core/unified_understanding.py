@@ -244,10 +244,10 @@ def parse_unified_understanding(
         raw_entities = intent_data.pop("supplied_entities", None)
         try:
             intent = IntentCandidate.from_mapping(intent_data)
+            supplied = _parse_supplied_entities(raw_entities)
+            control = ControlUnderstanding(intent, supplied_entities=supplied)
         except (IntentClassifierError, ValueError) as error:
             raise UnifiedUnderstandingError(str(error)) from error
-        supplied = _parse_supplied_entities(raw_entities)
-        control = ControlUnderstanding(intent, supplied_entities=supplied)
         return UnifiedUnderstandingResult(
             raw_text=expected_raw_text,
             control=control,
