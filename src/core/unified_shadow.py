@@ -4,14 +4,21 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from typing import TYPE_CHECKING
 
 from src.asr.schemas import ASRResult
-from src.core.clarification_acceptance import ClarificationContextSnapshot
+from src.core.clarification_acceptance import (
+    ClarificationAction,
+    ClarificationContextSnapshot,
+)
 from src.core.reply_coordinator import ReplyCoordinator
 from src.core.unified_acceptance_bypass import (
     UnifiedAcceptanceBypass,
     UnifiedAcceptanceBypassInput,
 )
+
+if TYPE_CHECKING:
+    from src.core.experiment_acceptance import AcceptedExperimentAnalysis
 
 
 class ShadowObservationStatus(str, Enum):
@@ -21,7 +28,12 @@ class ShadowObservationStatus(str, Enum):
 
 @dataclass(frozen=True)
 class ShadowObservation:
-    """不含口述正文或模型原始响应的影子观察摘要。"""
+    """不含口述正文或模型原始响应的影子观察摘要。
+
+    accepted_analysis 是可选的完整分析快照，
+    供主流程在统一链路活跃时直接用于事件落盘，
+    避免旧链路再次调用 LLM 产生重复分析。
+    """
 
     request_id: str
     session_id: str
@@ -36,6 +48,10 @@ class ShadowObservation:
     error_type: str | None = None
     executed: bool = False
     execution_reason: str | None = None
+    accepted_analysis: (
+        AcceptedExperimentAnalysis | None
+    ) = None
+    pending_action: ClarificationAction | None = None
 
     def __post_init__(self) -> None:
         if self.status == ShadowObservationStatus.OBSERVED:
@@ -53,10 +69,8 @@ class UnifiedShadowObserver:
     def __init__(
         self,
         bypass: UnifiedAcceptanceBypass,
-        executor=None,
     ) -> None:
         self._bypass = bypass
-        self._executor = executor
 
     def observe(
         self,
@@ -67,7 +81,6 @@ class UnifiedShadowObserver:
         asr_result: ASRResult,
         reply_coordinator: ReplyCoordinator,
         recent_context: tuple[str, ...] = (),
-        executor=None,
     ) -> ShadowObservation:
         try:
             snapshot = ClarificationContextSnapshot(
@@ -100,16 +113,6 @@ class UnifiedShadowObserver:
             ))
 
             action = result.clarification_action
-            executed = False
-            execution_reason = None
-            exec_target = executor if executor is not None else self._executor
-            if exec_target is not None:
-                try:
-                    exec_result = exec_target.execute(action)
-                    executed = exec_result.state_changed
-                    execution_reason = exec_result.reason
-                except Exception:
-                    execution_reason = "执行器内部异常"
 
             return ShadowObservation(
                 request_id=request_id,
@@ -126,8 +129,8 @@ class UnifiedShadowObserver:
                     if analysis is not None
                     else None
                 ),
-                executed=executed,
-                execution_reason=execution_reason,
+                accepted_analysis=accepted,
+                pending_action=action,
             )
         except Exception as error:
             return ShadowObservation(

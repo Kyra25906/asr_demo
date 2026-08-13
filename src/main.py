@@ -1,4 +1,5 @@
 import time
+from dataclasses import replace
 from datetime import datetime
 
 from src.asr.factory import (
@@ -86,7 +87,6 @@ from src.wakeword.detector import (
     WakeWordDetector,
 )
 
-
 SESSION_IDLE_TIMEOUT_SECONDS = 5 * 60
 
 def normalize_command(
@@ -99,7 +99,6 @@ def normalize_command(
 
     return InteractionCommandParser.normalize(text)
 
-
 def is_end_session_command(
     text: str,
 ) -> bool:
@@ -109,7 +108,6 @@ def is_end_session_command(
 
     command = InteractionCommandParser.parse(text)
     return command.command_type == InteractionCommandType.END_SESSION
-
 
 def create_experiment_llm_processor(
 ) -> ExperimentLLMProcessor:
@@ -156,7 +154,6 @@ def create_experiment_llm_processor(
         client=llm_client
     )
 
-
 def create_unified_shadow_observer() -> UnifiedShadowObserver | None:
     """按显式配置创建影子链；默认关闭。执行需额外开启 UNIFIED_SHADOW_EXECUTE_ENABLED。"""
 
@@ -170,7 +167,6 @@ def create_unified_shadow_observer() -> UnifiedShadowObserver | None:
     else:
         print("统一合同影子观察已开启；结果不会接管旧流程。")
     return UnifiedShadowObserver(UnifiedAcceptanceBypass(router))
-
 
 def display_shadow_observation(observation) -> None:
     """只显示脱敏摘要，不显示口述或外部错误详情。"""
@@ -202,7 +198,6 @@ def display_shadow_observation(observation) -> None:
         f"待确认动作={observation.clarification_action}"
         + exec_note
     )
-
 
 def recognize_one_segment(
     *,
@@ -237,7 +232,6 @@ def recognize_one_segment(
     return recognizer.recognize(
         audio_path
     )
-
 
 def display_segment_result(
     *,
@@ -288,7 +282,6 @@ def display_segment_result(
 
     print("ASR 和结构化事件已保存。\n")
 
-
 def display_completed_segment(
     completed: CompletedSegment,
 ) -> None:
@@ -336,9 +329,8 @@ def display_completed_segment(
         segment_id=(
             completed.segment_id
         ),
-        outcome=completed.outcome,
+        outcome=completed.outcome
     )
-
 
 def display_completed_segments(
     completed_segments: list[
@@ -346,12 +338,17 @@ def display_completed_segments(
     ],
     *,
     reply_coordinator: ReplyCoordinator,
+    skip_ingest: bool = False,
 ) -> None:
     """
     按提交顺序显示并登记一批后台结果。
 
     整批结果处理完后最多取出一条回复，
     防止同一个安全间隙连续输出多个问题。
+
+    skip_ingest 为 True 时，旧 LLM 分析结果
+    不会进入 ReplyCoordinator（新统一链路已
+    接管协调器交互）。
     """
 
     for completed in completed_segments:
@@ -362,6 +359,7 @@ def display_completed_segments(
         if (
             completed.error is None
             and completed.outcome is not None
+            and not skip_ingest
         ):
             reply_coordinator.ingest_analysis(
                 segment_id=completed.segment_id,
@@ -374,7 +372,7 @@ def display_completed_segments(
                 ),
                 confirms_target_suggestion=(
                     completed.confirms_target_suggestion
-                ),
+                )
             )
 
     reply = reply_coordinator.pop_next_reply()
@@ -382,16 +380,14 @@ def display_completed_segments(
     if reply is not None:
         display_coordinated_reply(reply)
 
-
 def display_coordinated_reply(
     reply: CoordinatedReply,
 ) -> None:
     """显示一条已经带有来源信息的协调回复。"""
 
-    print("\n待确认：")
+    print(f"\n待确认（问题{reply.display_number}）：")
     print(reply.text)
     print()
-
 
 def display_unresolved_clarifications(
     reply_coordinator: ReplyCoordinator,
@@ -434,7 +430,6 @@ def display_unresolved_clarifications(
 
     print()
 
-
 def try_handle_confirmation_answer(
     *,
     asr_result,
@@ -454,7 +449,7 @@ def try_handle_confirmation_answer(
         reply_coordinator
         .prepare_confirmation(
             segment_id=segment_id,
-        raw_text=asr_result.asr_transcript,
+        raw_text=asr_result.asr_transcript
         )
     )
 
@@ -467,7 +462,7 @@ def try_handle_confirmation_answer(
     asr_store.append(
         result=asr_result,
         session_id=session_id,
-        segment_id=segment_id,
+        segment_id=segment_id
     )
 
     record = (
@@ -477,7 +472,7 @@ def try_handle_confirmation_answer(
             answer_audio_path=(
                 str(asr_result.audio_path)
             ),
-            prepared=prepared,
+            prepared=prepared
         )
     )
 
@@ -489,7 +484,6 @@ def try_handle_confirmation_answer(
         reply_coordinator
         .commit_confirmation(prepared)
     )
-
 
 def display_confirmation_resolution(
     resolution: ConfirmationResolution,
@@ -511,7 +505,6 @@ def display_confirmation_resolution(
             "错词确认已完成，"
             f"仍需补充：{remaining}。\n"
         )
-
 
 def display_clarification_command_result(
     result: ClarificationCommandResult,
@@ -553,7 +546,6 @@ def display_clarification_command_result(
             f"{clarification.question}"
         )
     print()
-
 
 def run_experiment_session(
     *,
@@ -605,7 +597,7 @@ def run_experiment_session(
             context=session_context,
             max_pending_tasks=(
                 SESSION_MAX_PENDING_TASKS
-            ),
+            )
         )
     )
 
@@ -620,12 +612,20 @@ def run_experiment_session(
     if shadow_observer is not None and UNIFIED_SHADOW_EXECUTE_ENABLED:
         from src.core.clarification_executor import (
             AnswerEntityExtractor,
-            ClarificationExecutor,
+            ClarificationExecutor
         )
         extractor = AnswerEntityExtractor(create_llm_client())
         shadow_executor = ClarificationExecutor(
             reply_coordinator,
-            entity_extractor=extractor,
+            entity_extractor=extractor
+        )
+
+    def _display(segments):
+        """显示已完成段；新统一链路活跃时跳过旧ingest。"""
+        display_completed_segments(
+            segments,
+            reply_coordinator=reply_coordinator,
+            skip_ingest=UNIFIED_SHADOW_EXECUTE_ENABLED,
         )
 
     utterance_count = 0
@@ -663,11 +663,8 @@ def run_experiment_session(
                 .collect_ready()
             )
 
-            display_completed_segments(
-                completed_before_recording,
-                reply_coordinator=(
-                    reply_coordinator
-                ),
+            _display(
+                completed_before_recording
             )
 
             try:
@@ -677,7 +674,7 @@ def run_experiment_session(
                         recognizer=recognizer,
                         state_manager=(
                             state_manager
-                        ),
+                        )
                     )
                 )
 
@@ -708,9 +705,9 @@ def run_experiment_session(
                         "\n检测到结束指令，"
                         "停止接收新的实验口述。"
                     )
-                    display_completed_segments(
-                        completed_after_asr,
-                        reply_coordinator=reply_coordinator,
+                    _display(
+                        completed_after_asr
+                        
                     )
                     break
 
@@ -730,16 +727,25 @@ def run_experiment_session(
                         segment_id=segment_id,
                         asr_result=asr_result,
                         reply_coordinator=reply_coordinator,
-                        executor=shadow_executor,
                     )
-                    display_shadow_observation(observation)
+                    if not UNIFIED_SHADOW_EXECUTE_ENABLED:
+                        display_shadow_observation(observation)
+                    _new_chain_handled_answer = (
+                        observation.status.value == "observed"
+                        and observation.clarification_action == "answer"
+                    )
+                else:
+                    _new_chain_handled_answer = False
 
-                targeted_answer_request = (
-                    resolve_targeted_answer(
-                    asr_result.asr_transcript,
-                        reply_coordinator=reply_coordinator,
+                if _new_chain_handled_answer:
+                    targeted_answer_request = None
+                else:
+                    targeted_answer_request = (
+                        resolve_targeted_answer(
+                        asr_result.asr_transcript,
+                            reply_coordinator=reply_coordinator
+                        )
                     )
-                )
 
                 if (
                     targeted_answer_request is not None
@@ -750,7 +756,7 @@ def run_experiment_session(
                         asr_store.append(
                             result=asr_result,
                             session_id=session_id,
-                            segment_id=segment_id,
+                            segment_id=segment_id
                         )
                     except Exception as error:
                         print(
@@ -761,9 +767,9 @@ def run_experiment_session(
                             "问题状态没有改变，"
                             "系统将继续监听。\n"
                         )
-                        display_completed_segments(
-                            completed_after_asr,
-                            reply_coordinator=reply_coordinator,
+                        _display(
+                            completed_after_asr
+                            
                         )
                         continue
 
@@ -788,9 +794,9 @@ def run_experiment_session(
                             "水浴温度是 60 摄氏度。”\n"
                         )
 
-                    display_completed_segments(
-                        completed_after_asr,
-                        reply_coordinator=reply_coordinator,
+                    _display(
+                        completed_after_asr
+                        
                     )
                     continue
 
@@ -801,7 +807,7 @@ def run_experiment_session(
                             session_id=session_id,
                             segment_id=segment_id,
                             reply_coordinator=reply_coordinator,
-                            asr_store=asr_store,
+                            asr_store=asr_store
                         )
                     )
                 except Exception as error:
@@ -813,9 +819,9 @@ def run_experiment_session(
                         "问题状态没有改变，"
                         "系统将继续监听。\n"
                     )
-                    display_completed_segments(
-                        completed_after_asr,
-                        reply_coordinator=reply_coordinator,
+                    _display(
+                        completed_after_asr
+                        
                     )
                     continue
 
@@ -823,9 +829,9 @@ def run_experiment_session(
                     display_clarification_command_result(
                         clarification_command_result
                     )
-                    display_completed_segments(
-                        completed_after_asr,
-                        reply_coordinator=reply_coordinator,
+                    _display(
+                        completed_after_asr
+                        
                     )
                     continue
 
@@ -841,7 +847,7 @@ def run_experiment_session(
                             asr_store=asr_store,
                             confirmation_store=(
                                 confirmation_store
-                            ),
+                            )
                         )
                     )
                 except Exception as error:
@@ -854,9 +860,9 @@ def run_experiment_session(
                         "待确认项保持未解决，"
                         "系统将继续监听。\n"
                     )
-                    display_completed_segments(
-                        completed_after_asr,
-                        reply_coordinator=reply_coordinator,
+                    _display(
+                        completed_after_asr
+                        
                     )
                     continue
 
@@ -864,62 +870,126 @@ def run_experiment_session(
                     display_confirmation_resolution(
                         confirmation_resolution
                     )
-                    display_completed_segments(
-                        completed_after_asr,
-                        reply_coordinator=reply_coordinator,
+                    _display(
+                        completed_after_asr
+                        
                     )
                     continue
 
-                display_completed_segments(
-                    completed_after_asr,
-                    reply_coordinator=reply_coordinator,
+                _display(
+                    completed_after_asr
+
                 )
 
                 experiment_segment_count += 1
 
-                # submit() 通常立即返回。
-                #
-                # 如果任务积压达到上限，
-                # 它会等待最旧任务完成，
-                # 防止队列无限增长。
-                completed_during_submit = (
-                    processing_queue.submit(
-                        asr_result=(
-                            asr_result
-                        ),
-                        session_id=session_id,
-                        segment_id=segment_id,
-                        target_clarification_id=(
-                            targeted_answer_request.clarification_id
-                            if targeted_answer_request is not None
-                            else None
-                        ),
-                        confirms_target_suggestion=(
-                            targeted_answer_request.confirms_suggestion
-                            if targeted_answer_request is not None
-                            else False
-                        ),
+                if UNIFIED_SHADOW_EXECUTE_ENABLED:
+                    # 统一链路活跃：ASR 由 main 直接落盘，
+                    # 不再通过旧 SegmentProcessor 调 LLM。
+                    # 有实验分析时一并保存事件，
+                    # 非实验段（abstention/查看等）只存 ASR。
+                    try:
+                        asr_store.append(
+                            result=asr_result,
+                            session_id=session_id,
+                            segment_id=segment_id,
+                        )
+                    except Exception as error:
+                        print(
+                            "\nASR 保存失败："
+                            f"{type(error).__name__}: {error}"
+                        )
+                        print(
+                            "系统将继续监听。\n"
+                        )
+                        continue
+
+                    if observation.accepted_analysis is not None:
+                        try:
+                            segment_processor.event_store.append_analysis(
+                                observation.accepted_analysis.to_process_outcome()
+                            )
+                        except Exception as error:
+                            print(
+                                "\n事件保存失败："
+                                f"{type(error).__name__}: {error}"
+                            )
+                            print(
+                                "ASR 原文已保存，"
+                                "系统将继续监听。\n"
+                            )
+
+                    # commit：ASR 与事件证据都落盘成功后，
+                    # 才执行状态变更。
+                    executed = False
+                    execution_reason = None
+                    if observation.pending_action is not None:
+                        try:
+                            exec_result = shadow_executor.execute(
+                                observation.pending_action
+                            )
+                            executed = exec_result.state_changed
+                            execution_reason = exec_result.reason
+                        except Exception:
+                            execution_reason = "执行器内部异常"
+
+                    observation = replace(
+                        observation,
+                        executed=executed,
+                        execution_reason=execution_reason,
                     )
-                )
+                    display_shadow_observation(observation)
 
-                display_completed_segments(
-                    completed_during_submit,
-                    reply_coordinator=(
-                        reply_coordinator
-                    ),
-                )
+                    print(
+                        f"第 {segment_id} 段"
+                        "已保存。"
+                    )
+                    print(
+                        f"当前待处理任务数："
+                        f"{processing_queue.pending_count()}"
+                    )
+                    print(
+                        "系统将立即继续监听。\n"
+                    )
+                else:
+                    # 回退路径：统一链路关闭时，
+                    # 走旧 SegmentProcessor
+                    # （含 LLM 调用）。
+                    completed_during_submit = (
+                        processing_queue.submit(
+                            asr_result=(
+                                asr_result
+                            ),
+                            session_id=session_id,
+                            segment_id=segment_id,
+                            target_clarification_id=(
+                                targeted_answer_request.clarification_id
+                                if targeted_answer_request is not None
+                                else None
+                            ),
+                            confirms_target_suggestion=(
+                                targeted_answer_request.confirms_suggestion
+                                if targeted_answer_request is not None
+                                else False
+                            )
+                        )
+                    )
 
-                print(
-                    f"第 {segment_id} 段"
-                    "已提交后台处理。"
-                )
-                print(
-                    f"当前待处理任务数："
-                    f"{processing_queue.pending_count()}"
-                )
-                print(
-                    "系统将立即继续监听。\n"
-                )
+                    _display(
+                        completed_during_submit
+                    )
+
+                    print(
+                        f"第 {segment_id} 段"
+                        "已提交后台处理。"
+                    )
+                    print(
+                        f"当前待处理任务数："
+                        f"{processing_queue.pending_count()}"
+                    )
+                    print(
+                        "系统将立即继续监听。\n"
+                    )
 
             except TimeoutError:
                 idle_seconds = (
@@ -934,11 +1004,8 @@ def run_experiment_session(
                     .collect_ready()
                 )
 
-                display_completed_segments(
-                    completed_after_timeout,
-                    reply_coordinator=(
-                        reply_coordinator
-                    ),
+                _display(
+                    completed_after_timeout
                 )
 
                 if (
@@ -1004,11 +1071,8 @@ def run_experiment_session(
             processing_queue.finish()
         )
 
-        display_completed_segments(
-            remaining_completed,
-            reply_coordinator=(
-                reply_coordinator
-            ),
+        _display(
+            remaining_completed
         )
 
     print(
@@ -1060,7 +1124,7 @@ def main() -> None:
         SegmentProcessor(
             asr_store=asr_store,
             event_store=event_store,
-            llm_processor=llm_processor,
+            llm_processor=llm_processor
         )
     )
 
@@ -1079,7 +1143,7 @@ def main() -> None:
             ),
             keywords_file=(
                 WAKEWORD_KEYWORDS_FILE
-            ),
+            )
         )
     )
 
@@ -1121,7 +1185,7 @@ def main() -> None:
                 state_manager=(
                     state_manager
                 ),
-                shadow_observer=shadow_observer,
+                shadow_observer=shadow_observer
             )
 
         except Exception as error:
@@ -1139,7 +1203,6 @@ def main() -> None:
             state_manager.change_to(
                 AssistantState.IDLE
             )
-
 
 if __name__ == "__main__":
     try:

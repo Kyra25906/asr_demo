@@ -1,6 +1,10 @@
 # asr_demo 项目任务清单
 
-最后更新：2026-08-11
+最后更新：2026-08-13（MAIN-EVIDENCE-COMMIT-01 证据优先提交）
+
+> 本文件是当前任务、优先级和验收状态的唯一来源。架构说明、环境命令和下一会话摘要
+> 分别见 `PROJECT_ARCHITECTURE.md`、`ENVIRONMENT_SETUP.md` 和
+> `NEXT_SESSION_HANDOFF_2026-08-09.md`；第 6 节维护日志只作证据追溯，不决定当前下一项。
 
 真实项目：`C:\Users\dahli\Desktop\asr_demo`
 
@@ -41,9 +45,10 @@ TODO → DESIGN → CODED → AUTO_OK → REAL_OK
 
 ## 2. 当前测试基线
 
-- 全量自动测试：`422 tests OK`（Python 3.11.9，2026-08-11）
-- 最近真实连续口述会话：`20260811_143031`
-- 最近真实会话已验证：CREATE✅、ANSWER✅（extractor提取实体→已执行）；新老并行重复问题（已知）；LLM不稳定偶尔abstention（已知）；启动慢（MODEL-LOAD-02）
+- 当前全量自动测试：`428 tests OK`（Python 3.11.9，2026-08-13）
+- 环境验证：核心依赖和 `src.main` 导入成功；首次沙箱内失败已确认是执行权限误判，不是 `.venv` 损坏
+- 最近真实连续口述会话：`20260813_104732`
+- 最近真实会话已验证：证据优先提交（prepare→persist→commit）生效；CREATE 追问、ANSWER 解决、REVIEW 查看、结束命令均正常；ASR 记录 3 段、事件记录 1 段、零重复 LLM；结束命令未进入分段。
 
 恢复工作时先运行：
 
@@ -57,7 +62,35 @@ cd C:\Users\dahli\Desktop\asr_demo
 
 ## 3. 当前唯一下一项
 
-> 关掉旧 `ingest_analysis`，或先处理已知问题：新老并行重复、LLM 不稳定误判 abstention、启动慢。
+> `MAIN-EVIDENCE-COMMIT-01` AUTO_OK。当前唯一下一项为 `MAIN-SESSION-CONTEXT-01`：恢复统一链路上下文。
+
+当前 P0 顺序：
+
+```text
+MAIN-EVIDENCE-COMMIT-01 AUTO_OK
+→ MAIN-SESSION-CONTEXT-01
+→ INTENT-02 五步清理
+```
+
+### 为什么要先清债再盖楼
+
+当前 `main.py` 里新旧两套代码用 `UNIFIED_SHADOW_ENABLED` 和 `UNIFIED_SHADOW_EXECUTE_ENABLED` 两个 flag 切换。
+带着这些 flag 和旧代码直接做查询/安全/RAG 扩展会导致：(1) 新功能也要写两套分支；(2) `UnifiedInputKind` 加 QUERY 需要所有测试数据同步更新——带着 flag 做更容易遗漏。
+先清干净再盖楼，每次改主流程就跑真实验收确认不退化。
+
+### 清理后的下一批：查询/安全/RAG 类型准备（P1）
+
+```text
+QUERY-TYPES-01 + SAFETY-TYPES-01 + KNOWLEDGE-PROTOCOLS-01 （并行，纯类型文件）
+→ UNIFIED-QUERY-01 （统一理解加 QUERY 分支）
+→ DISPATCH-QUERY-01 （分派加 KNOWLEDGE_BASE 目标）
+→ BYPASS-QUERY-01 + CONFIG-QUERY-SAFETY-01 + RAG-CONTEXT-CONTRACT-01
+→ 三项测试 + 现有测试数据更新
+→ 全量 ~444 项通过
+```
+
+这批只定义类型合同和扩展点，不改 main 行为（feature flag 默认 false）。
+完整实施（SAFETY-INTEGRATE-01、RAG-CONTEXT-01、QUERY-ANSWER-01）在 PRESENT 阶段稳定后再展开。
 
 ## 3.1 当前执行看板
 
@@ -81,6 +114,21 @@ cd C:\Users\dahli\Desktop\asr_demo
 | 14 | `P0` | `COMMAND-03` 自然控制表达兼容 | `AUTO_OK` | 将”我先跳过/可先跳过”等自然表达匹配到精确命令 | DEFER新增安全前缀+跳过后缀规则；REVIEW新增自然表达式模式；Prompt新增uncertain兜底规则；3项parser+1项prompt测试；418项全量通过；未做真实影子复验 |
 | 15 | `P0` | `INTENT-02-REPLY-GATE-02` ANSWER施工单实体填充 | `AUTO_OK` | ~ | 新增AnswerEntityExtractor轻量LLM提取+answer_clarification方法；统一理解control分支可携带supplied_entities；Executor优先用施工单实体再fallback到extractor；422项通过 |
 | 16 | `P0` | `INTENT-02-REPLY-GATE-03` 影子位接入ClarificationExecutor | `REAL_OK` | ~ | 真实会话`20260811_143031`：CREATE✅+ANSWER✅（轻量extractor提取实体→已执行）；4轮修复（重复ID/cls参数/缺extractor）；422项通过 |
+| 17 | `P0` | `INTENT-02-UNIFIED-CUTOVER-01` 关旧ingest_analysis，新链路成为唯一来源 | `REAL_OK` | ~ | 会话`20260812_100807`：5段口述，CREATE✅ ANSWER✅ REVIEW✅，无重复追问，结束命令正常；422项通过 |
+| 18 | `P0` | `INTENT-02-LLM-DEDUP-01` 关旧SegmentProcessor重复LLM调用 | `REAL_OK` | ~ | 会话`20260812_114401`：6段全部新路径直存零旧LLM；修NameError+非实验回退+answer竞态三个bug；422项通过 |
+| 19 | `P0` | `ENV-RECOVERY-02` 验证正式 Python 3.11.9 环境 | `AUTO_OK` | 基础解释器和 `.venv` 均为3.11.9；核心依赖与 main 导入成功；422项通过 | 首次失败是沙箱执行权限误判；未重建环境 |
+| 20 | `P0` | `MAIN-FLAG-INVARIANT-01` 配置组合不变量 | `AUTO_OK` | 禁止 execute=true/enabled=false；补配置测试和 `.env.example` | config 新增 `validate_shadow_flags` 纯函数并在加载时 fail-fast；新增 5 项测试；427 项通过；非法组合不再可能读取未赋值的 `observation` |
+| 21 | `P0` | `MAIN-EVIDENCE-COMMIT-01` 澄清动作证据优先提交 | `REAL_OK` | 状态动作统一采用 prepare→persist→commit | observe 拆出 pending_action；main 编排 persist ASR/事件 → commit 状态；真实会话 20260813_104732：CREATE/ANSWER/REVIEW/结束正常，ASR 3 段 + 事件 1 段落盘，零重复 LLM；428 项通过 |
+| 22 | `P0` | `MAIN-SESSION-CONTEXT-01` 恢复统一链路上下文 | `TODO` | observe 接收提交前上下文；事件落盘成功后 add_analysis | 第二段可看到第一段；结束上下文计数正确 |
+| 23 | `P1` | `MAIN-RUNTIME-HARDEN-01` 运行边界整理 | `TODO` | 修正实验段计数、持续唤醒错误退避、删除重复空字段分支 | 正常、边界和持续失败路径有专项测试 |
+| 24 | `P0` | `INTENT-02-CLEANUP-FLAGS-01` 去标志位 | `TODO` | 删除两个 shadow flag，新链成为唯一默认路径 | 在 main 三项一致性修复后执行 |
+| 25 | `P0` | `INTENT-02-CLEANUP-SUBMIT-01` 去旧 submit 分支 | `TODO` | 删除旧 submit、skip_ingest 和旧显示补丁 | 旧 SegmentProcessor LLM 路径从 main 消失 |
+| 26 | `P0` | `INTENT-02-CLEANUP-COMMAND-01` 统一命令入口 | `TODO` | 消除三道旧门卫和 `_new_chain_handled_answer` 补丁 | 每种命令有且只有一条处理路径 |
+| 27 | `P0` | `INTENT-02-CLEANUP-NAMING-01` 去影子命名 | `TODO` | 观察器等改为正式执行链命名 | 不再有误导性的 shadow 概念 |
+| 28 | `P0` | `INTENT-02-CLEANUP-VERIFY-01` 清理后真实验收 | `TODO` | 五类口述连续会话验收 | 全量测试通过且真实功能不减 |
+| 29 | `P1` | Query/Safety/Knowledge 三组合同与 Fake | `TODO` | 独立类型和协议，不接 main | **清理后第一批** |
+| 30 | `P1` | QUERY 第四分支与只读分派 | `TODO` | unified 识别 QUERY，路由到知识查询边界 | 不接真实设备服务或 RAG |
+| 31 | `P2` | 安全、RAG、查询真实接入与 E2E | `TODO` | 见第 I.2 节 | PRESENT 与团队服务合同稳定后 |
 
 ### 当前路线为什么这样排
 
@@ -140,6 +188,7 @@ PRESENT-INTEGRATE-01 最小消息链路
 
 ```text
 CLARIFY-TARGET-PERSIST-01 答复目标持久化
+→ EXPERIMENT-EVIDENCE-CONTRACT-01 事件版本化
 → SESSION-02 按session_id聚合
 → EXPORT-01 Markdown/JSON导出
 → STABILITY-01/03/04 真实长会话验收
@@ -153,7 +202,8 @@ CLARIFY-TARGET-PERSIST-01 答复目标持久化
 ```text
 TTS-01 接口和假客户端
 → TTS-02 系统TTS
-→ TTS-03/04/05 SPEAKING状态、降级和打断
+→ TTS-03/04/05 SPEAKING状态、降级和打断（半双工第一版）
+→ FULL-DUPLEX-01~06 全双工增强（可选，回声能力达标后）
 → GPT-SoVITS
 → Live2D
 → Word/PDF美化导出
@@ -165,11 +215,13 @@ TTS-01 接口和假客户端
 
 | 优先级 | 任务 | 暂缓原因 | 重新启动条件 |
 |---|---|---|---|
-| `P3` | TTS、GPT-SoVITS、Live2D | 会把当前输出时序问题放大，且难以判断故障来源 | 阶段三和阶段四达到验收条件 |
+| `P3` | TTS（含全双工）、GPT-SoVITS、Live2D | 会把当前输出时序问题放大，且难以判断故障来源 | 阶段三和阶段四达到验收条件 |
 | `P3` | Word/PDF报告美化 | 当前还没有完整SessionRecord可供可靠导出 | Markdown/JSON第一版真实导出通过 |
-| `P3` | Demo实验风险知识库 | Demo实验尚未最终确定，过早写规则容易返工 | 确定演示实验、SOP和术语范围 |
-| `P3` | RAG和用户画像 | 属于质量增强，不是当前闭环缺失的核心能力 | 基础记录、确认、总结和导出稳定 |
 | `P3` | 多工具Agent | 外部写入和高风险动作尚未建立统一确认边界 | 安全等级、白名单和确认流程完成 |
+
+> **注意**：RAG/用户画像和实验风险知识库已从"暂缓"移入正式任务总表第 I 节。
+> 其中类型定义（QUERY-TYPES-01、SAFETY-TYPES-01、KNOWLEDGE-PROTOCOLS-01）为 P1 准备阶段；
+> 完整实施（SAFETY-INTEGRATE-01、QUERY-ANSWER-01 等）为 P2，在 INTENT-02 清理和 PRESENT 阶段后展开。
 
 ## 3.4 个人开发范围与团队分工（待团队确认）
 
@@ -290,7 +342,7 @@ A负责提供稳定消息协议和Mock数据，不应让前端直接读取 `main
 | `KWS-01` | `P1` | 离线唤醒“小科小科” | `REAL_OK` | 真实日志多次唤醒成功 |
 | `ASR-01` | `P0` | FunASR/SenseVoice 中文识别 | `REAL_OK` | 真实实验口述已识别并保存 |
 | `ASR-02` | `P0` | 专业词错误保留原文 | `REAL_OK` | “一液枪/微生”等原文未被覆盖 |
-| `ASR-03` | `P2` | 建立实验专业词固定评测集 | `TODO` | 真实验收发现专业词错词较多；需固定音频、期望文本和错词统计 |
+| `ASR-03` | `P2` | 建立实验专业词固定评测集 | `TODO` | 真实验收发现专业词错词较多；需固定音频、期望文本和错词统计；复用 ASR-CMD 系列的固定语料评测工具与报告格式，不另建一套 |
 | `ASR-04` | `P2` | 专业词热词/文本后处理对照实验 | `TODO` | 当前识别调用未传热词；必须在 ASR-03 后比较，且保留模型原文 |
 | `ASR-05` | `P0` | 固定中文语言参数对照测试 | `REAL_OK` | 14条真实WAV对照：auto文本8/14、意图9/14；zh文本8/14、意图10/14；zh有一项意图改善但也产生两项文本回退，暂不修改main默认auto |
 | `ASR-CMD-01` | `P0` | 建立通用控制命令文本/音频语料和基线 | `REAL_OK` | 新增accepted尝试→真实ASR清单/基线生成器；24条人工接受WAV使用SenseVoice language=auto、use_itn=True、batch_size_s=60两次真实运行汇总一致：文本精确13/24、精确规则意图11/24、控制漏触发13、普通内容误触发0；进一步用人工参考文本诊断出规则覆盖不足13、ASR额外造成意图漏触发0；全量297项通过；本地识别清单和报告不上传 |
@@ -369,10 +421,10 @@ A负责提供稳定消息协议和Mock数据，不应让前端直接读取 `main
 | `QUEUE-02` | `P1` | 单线程顺序保证 | `AUTO_OK` | 队列顺序测试通过 |
 | `QUEUE-03` | `P1` | 最大积压和背压 | `AUTO_OK` | backpressure 测试通过 |
 | `QUEUE-04` | `P1` | 会话结束优雅等待 | `REAL_OK` | 真实结束时等待剩余任务完成 |
-| `SESSION-WORK-CONTRACT-01` | `P1` | 通用会话工作项与完成结果合同 | `TODO` | 当前CompletedSegment绑定旧ProcessOutcome[LLMAnalysisResult]；改为只表达任务身份、类型、完成/拒绝/失败状态和业务载荷，使队列只负责顺序、背压与异常隔离，不猜测所有任务都是旧实验LLM |
+| `SESSION-WORK-CONTRACT-01` | `P1` | 通用会话工作项与完成结果合同 | `TODO` | 当前CompletedSegment绑定旧ProcessOutcome[LLMAnalysisResult]；改为只表达任务身份、类型、完成/拒绝/失败状态和业务载荷，使队列只负责顺序、背压与异常隔离，不猜测所有任务都是旧实验LLM；与 INTENT-02 清理同步执行，否则旧 ProcessOutcome[LLMAnalysisResult] 耦合残留于队列层 |
 | `CTX-01` | `P1` | 最近事件上下文 | `REAL_OK` | 上下文进入真实提示词，单测通过 |
 | `CTX-02` | `P0` | NOTE 使用 raw_text | `AUTO_OK` | SessionContext 单测通过 |
-| `SESSION-CONTEXT-CONTRACT-01` | `P1` | 结构化会话上下文证据项 | `TODO` | 用不可变ContextEvidenceItem保存来源、证据类型、忠实文本、规范候选、确认与降级状态；给LLM前再格式化为字符串，避免当前deque[str]丢失来源和可信等级 |
+| `SESSION-CONTEXT-CONTRACT-01` | `P1` | 结构化会话上下文证据项 | `TODO` | 用不可变ContextEvidenceItem保存来源、证据类型、忠实文本、规范候选、确认与降级状态；给LLM前再格式化为字符串，避免当前deque[str]丢失来源和可信等级；与 INTENT-02 清理同步执行，否则旧 deque[str] 上下文残留于会话层；其结构将被 `RAG-CONTEXT-CONTRACT-01` 的 EnrichedContext.recent_events 消费，定结构时预留拼接边界 |
 
 ### D. 存储、会话与导出
 
@@ -384,7 +436,7 @@ A负责提供稳定消息协议和Mock数据，不应让前端直接读取 `main
 | `STORE-04` | `P1` | LLM 降级元数据保存 | `REAL_OK` | 真实历史日志出现降级 NOTE |
 | `EXPERIMENT-EVIDENCE-CONTRACT-01` | `P1` | 版本化实验事件证据合同 | `TODO` | 为事件记录增加schema_version、严格from_dict、未知字段拒绝、历史兼容读取、request_id、ASR证据引用、生成路径和采用状态；坚持新写新版本、旧读旧版本、不原地覆盖历史 |
 | `SESSION-01` | `P0` | 每次实验使用独立 session_id | `REAL_OK` | 会话编号已进入 ASR/事件记录 |
-| `SESSION-IDENTITY-CONTRACT-01` | `P2` | 会话内身份与编号合同 | `TODO` | 区分request_id、utterance_id、segment_id、experiment_step_id和clarification_id，规定生成者、唯一范围和跨记录引用，解决内部口述编号与用户实验步骤编号混用 |
+| `SESSION-IDENTITY-CONTRACT-01` | `P1` | 会话内身份与编号合同 | `TODO` | 区分request_id、utterance_id、segment_id、experiment_step_id和clarification_id，规定生成者、唯一范围和跨记录引用，解决内部口述编号与用户实验步骤编号混用；是 `PRESENT-04` 编号分离的前置合同，须在 PRESENT-04 之前定稿 |
 | `SESSION-02` | `P1` | 按 session_id 查询完整实验 | `TODO` | 尚无统一查询命令 |
 | `EXPORT-01` | `P1` | 导出单次实验 Markdown/JSON | `TODO` | TTS 前建议完成第一版 |
 | `EXPORT-02` | `P3` | 导出报告文档 | `TODO` | 后期白名单工具功能 |
@@ -447,7 +499,7 @@ A负责提供稳定消息协议和Mock数据，不应让前端直接读取 `main
 | `PRESENT-01` | `P1` | 定义 PresentationMessage 数据结构 | `AUTO_OK` | 10项协议单测及全量118项通过；移除RECORD消息渠道，增加ScreenTarget |
 | `PRESENT-02` | `P1` | 当前回答回执优先于旧后台追问 | `REAL_OK` | 会话20260808_141435中暂缓/回看回执先展示，随后才展示ASR期间完成的旧后台结果 |
 | `PRESENT-03` | `P1` | 按认知负担预算组成语音消息组 | `DESIGN` | 默认最多2条、50字、1个问题；支持“回执+相关问题” |
-| `PRESENT-04` | `P1` | 内部口述编号与用户实验步骤编号分离 | `TODO` | 确认答复占号导致实验步骤从2跳到4 |
+| `PRESENT-04` | `P1` | 内部口述编号与用户实验步骤编号分离 | `TODO` | 确认答复占号导致实验步骤从2跳到4；依赖 `SESSION-IDENTITY-CONTRACT-01` 的编号合同，先定合同再改展示，避免打补丁 |
 | `PRESENT-07` | `P1` | 指定编号答复完成后的明确状态回执 | `TODO` | CLARIFY-TARGET-01已能正确路由，但后台完成后暂未直接显示“问题N已解决/仍缺少哪些字段”；当前可用回看命令核验 |
 | `PRESENT-05` | `P1` | 用户输出与 debug 日志分离 | `TODO` | 状态、路径、token、耗时默认不展示/不朗读 |
 | `PRESENT-06` | `P1` | 输出顺序真实验收 | `TODO` | 先确认回执，再在后续安全间隙提出新问题 |
@@ -458,9 +510,9 @@ A负责提供稳定消息协议和Mock数据，不应让前端直接读取 `main
 
 | ID | 优先级 | 任务 | 状态 | 验收证据/备注 |
 |---|---|---|---|---|
-| `SAFETY-01` | `P1` | 定义系统故障分类和严重程度 | `TODO` | 区分问题类型、严重程度、消息优先级；先覆盖可由程序确定的故障 |
+| `SAFETY-01` | `P1` | 定义系统故障分类和严重程度 | `TODO` | 区分问题类型、严重程度、消息优先级；先覆盖可由程序确定的故障。与 `SAFETY-TYPES-01` 的实验风险分类不同域：本项管“系统可靠性故障”（存储不可写/音频失败），后者管“实验操作安全”（高温/危险化学品），两者不得共用一套枚举 |
 | `SAFETY-02` | `P1` | 将确定的存储/音频故障转换为用户消息 | `TODO` | 存储不可写等关键故障必须明确提醒；可降级故障不得冒充严重危险 |
-| `SAFETY-03` | `P3` | 确定 Demo 实验后建立风险规则白名单 | `TODO` | Demo、SOP 和术语尚未确定，当前不提前绑定具体实验风险规则 |
+| `SAFETY-03` | `P3` | 确定 Demo 实验后建立风险规则白名单 | `TODO` | Demo、SOP 和术语尚未确定，当前不提前绑定具体实验风险规则。规则集定义已细化到 I 节 `SAFETY-RULES-01`，本项仅作“Demo 实验定型”的前置提醒，不再重复定义规则 |
 | `SAFETY-04` | `P2` | 实验风险提示的证据等级与确认流程 | `TODO` | 区分 confirmed、suspected、unknown；疑似 ASR 错词不得直接判定危险 |
 
 ### H4. 跨模块集成与个人能力拓展
@@ -479,19 +531,120 @@ A负责提供稳定消息协议和Mock数据，不应让前端直接读取 `main
 | `OBS-01` | `P2` | 跨模块request_id和关键耗时 | `TODO` | 调试信息进入开发日志，不默认显示或朗读给用户 |
 | `E2E-DEMO-01` | `P2` | 2～3分钟Demo脚本和验收表 | `TODO` | 三人共同；连续跑通至少3次并包含断网或服务失败降级 |
 
-### I. TTS 与后续阶段
+### I. 查询识别、安全警示与知识库增强
+
+这一组分两阶段推进：**Phase 1 铺类型和扩展点**（纯合同，不改行为，P1），**Phase 2 接真实能力**（知识库检索、安全规则引擎，P2）。
+
+#### I.1 Phase 1：类型合同 + 扩展点准备（P1，INTENT-02 清理后立即启动）
+
+```
+准备阶段的目标：
+  1. 三组类型合同就位（query / safety / knowledge）
+  2. unified 管线能识别 QUERY 类输入（第 4 分支）
+  3. 分派层能把 QUERY 路由到 KNOWLEDGE_BASE 目标
+  4. 检索证据、用户画像与实验事实保持独立合同
+  5. 新能力开关默认关闭，并对非法组合做配置校验
+  6. ~22 项新测试 + 现有测试数据更新 → 全量 ~444 项通过
+  7. main.py 行为完全不变（feature flag 全关 = 与今天一模一样）
+```
+
+**Phase 1a — 纯新文件（技术上独立，但按当前优先级在 P0 清理后执行）**
+
+| ID | 优先级 | 任务 | 为什么现在能做 |
+|---|---|---|---|
+| `QUERY-TYPES-01` | `P1` | `src/core/query_types.py`：QuerySubKind enum、QueryUnderstanding、QueryAnswerResult | 全新文件，不被任何现有代码 import |
+| `SAFETY-TYPES-01` | `P1` | `src/core/safety_check.py`：SafetyConcernType(7种)、SafetyCheckDisposition(3级)、SafetyConcern、SafetyCheckResult、SafetyCheck Protocol + FakeSafetyCheck | 同上 |
+| `KNOWLEDGE-PROTOCOLS-01` | `P1` | `src/knowledge/` 包：KnowledgeBase Protocol、UserProfile、KnowledgeHint、KnowledgeBaseResult、FakeKnowledgeBase | 只依赖 `QUERY-TYPES-01.QuerySubKind` |
+| `QUERY-RECOGNIZE-TEST-01` | `P1` | `tests/test_query_recognition.py` ~8 项 | 只测新类型，不碰现有测试 |
+| `SAFETY-CHECK-TEST-01` | `P1` | `tests/test_safety_check.py` ~8 项 | 同上 |
+| `KNOWLEDGE-PROTOCOLS-TEST-01` | `P1` | `tests/test_knowledge_protocols.py` ~6 项 | 同上 |
+
+> 这 6 个做完：类型合同和 Fake 就位，并以恢复后的实际测试数作为新基线；不预先污染 ExperimentEntities 或 PendingClarification。
+
+检索命中（标准术语、SOP 来源、置信度）应保存在独立 `KnowledgeHit` 或
+`KnowledgeEvidence` 中，而不是加入 `ExperimentEntities`；追问的知识依据应通过动作证据关联，
+而不是加入 `PendingClarification` 生命周期对象。只有真实用例证明字段属于该领域对象后才扩展 schema。
+
+**Phase 1b — 扩展现有管线，清理完后做（依赖 INTENT-02-CLEANUP-VERIFY-01）**
+
+| ID | 优先级 | 任务 | 为什么必须等清理 |
+|---|---|---|---|
+| `UNIFIED-QUERY-01` | `P1` | `UnifiedInputKind` 加 `QUERY`；`UnifiedUnderstandingResult` 四选一；`TOP_LEVEL_FIELDS` 加 `"query"`；`parse_unified_understanding` 加 query 解析；`unified_prompts.py` 加 query 规则 | 所有测试数据 dict 需同步加 `"query": None`——8 个测试文件、20+ 处 fixture。清理后管线干净，改一处只影响一处 |
+| `DISPATCH-QUERY-01` | `P1` | `UnifiedDispatchDestination` 加 `KNOWLEDGE_BASE`；`UnifiedDispatchPermission` 加 `FORWARD_QUERY_TO_KNOWLEDGE`；`UnifiedDispatchPlanner.plan()` 加 QUERY→KNOWLEDGE_BASE 分支 | 依赖 `UNIFIED-QUERY-01`；枚举完整性测试需同步更新 |
+| `BYPASS-QUERY-01` | `P1` | `UnifiedAcceptanceBypass.inspect()` 加 `KNOWLEDGE_BASE` 分支（当前行为同 ABSTENTION：不产生实验分析，NO_ACTION） | 依赖 `DISPATCH-QUERY-01` |
+| `CONFIG-QUERY-SAFETY-01` | `P1` | 新能力开关默认关闭；若采用 observe/execute 双开关，配置层必须验证依赖关系 | 在旧 shadow flag 删除后设计，避免复制当前非法组合问题 |
+| `RAG-CONTEXT-CONTRACT-01` | `P1` | 定义独立 EnrichedContext（recent_events + user_profile + knowledge_hits），由适配器转换为 prompt 输入 | 不直接向现有 SessionContext 塞空字典；先固定数据所有者和信任边界 |
+
+> 这 5 个做完：管线能识别和路由 QUERY 类输入，feature flag 关闭时行为与今天无差异。
+
+**Phase 1 完成标志**：全量 ~444 项测试通过 + 启动 main.py 行为与修改前完全一致。
+
+#### I.2 Phase 2：真实能力接入（P2，PRESENT 阶段稳定后）
+
+| ID | 优先级 | 前置依赖 | 任务 |
+|---|---|---|---|
+| `SAFETY-INTEGRATE-01` | `P2` | Phase 1 + `SAFETY-01/02` | `ExperimentCandidateAcceptor` 前插入 `SafetyCheck.check()`；有警告走 `MessageKind.SAFETY_ALERT` |
+| `SAFETY-RULES-01` | `P2` | `SAFETY-INTEGRATE-01` | 定义 Demo 实验危险操作规则集（高温阈值、危险化学品列表等） |
+| `SAFETY-E2E-01` | `P2` | `SAFETY-RULES-01` | 真实口述触发警告；WARN_BUT_PROCEED / BLOCK_UNTIL_ACKNOWLEDGED 两类路径验收 |
+| `RAG-CONTEXT-01` | `P2` | Phase 1 + `RAG-CONTEXT-CONTRACT-01` | 将真实 user_profile + knowledge_hits 组装为 EnrichedContext，再转换为 prompt 输入 |
+| `RAG-RETRIEVE-01` | `P2` | `RAG-CONTEXT-01` | 实现真实 KnowledgeBase（SOP 文档索引 + 设备状态查询） |
+| `QUERY-ANSWER-01` | `P2` | `RAG-RETRIEVE-01` | KNOWLEDGE_BASE 目标接真实 KnowledgeBase.search() → QueryAnswerResult → PresentationMessage |
+| `QUERY-E2E-01` | `P2` | `QUERY-ANSWER-01` | 真实 ASR→统一理解→知识库→回答；设备占用/实验时间/协议参考/通用知识四类验收 |
+
+#### I.3 为什么不倒过来（先接能力再补类型）
+
+```text
+当前管线：experiment / control / uncertain 三选一
+         ↓
+想加 QUERY：必须先让 UnifiedInputKind 接受第 4 种值
+         ↓
+不先定义 QueryUnderstanding：parse 函数不知道 query 分支长什么样
+         ↓
+不先定 QuerySubKind：LLM prompt 不知道查询有几种子类型
+         ↓
+不先铺 KnowledgeBase Protocol：query 到了 KNOWLEDGE_BASE 目标后不知道调用什么接口
+
+结论：类型合同是管线的"地基"。Phase 1 定了 vocabulary，
+     Phase 2 只是"往 vocabulary 里填真实实现"，不用再回头改合同。
+```
+
+#### I.4 优先级总览
+
+```text
+P0 (当前): ENV-RECOVERY-02 → MAIN 三项一致性修复 → INTENT-02-CLEANUP-* 五步
+P1 (下一批):
+  Phase 1a: QUERY-TYPES-01 + SAFETY-TYPES-01 + KNOWLEDGE-PROTOCOLS-01 + 三项测试
+  Phase 1b: UNIFIED-QUERY-01 → DISPATCH-QUERY-01 → BYPASS-QUERY-01 → CONFIG + ENRICHED-CONTEXT合同
+P2 (远期): SAFETY-INTEGRATE → RAG-CONTEXT → RAG-RETRIEVE → QUERY-ANSWER → E2E
+P3 (TTS后): AGENT-01 多工具Agent
+```
+
+### J. TTS 与后续阶段
 
 | ID | 优先级 | 任务 | 状态 | 验收证据/备注 |
 |---|---|---|---|---|
-| `TTS-01` | `P3` | 定义 TTSClient 接口 | `TODO` | 先假客户端单测 |
+| `TTS-01` | `P3` | 定义 TTSClient 接口 | `TODO` | 先假客户端单测；操作签名只保留播放本质：`stop()` 打断、`is_speaking` 状态、播放生命周期回调（开始/分句结束/全部结束，供分句播放与 Live2D 口型）、失败回退；音色/语速/音量等可变选项收进可扩展的 TTSOptions 对象，不铺开成签名参数，将来加音色/克隆只扩 options 不破坏调用方 |
 | `TTS-02` | `P3` | 系统 TTS 第一版 | `TODO` | 不先接 GPT-SoVITS |
-| `TTS-03` | `P3` | 增加 SPEAKING 状态 | `TODO` | 播放期间暂停 KWS/VAD |
+| `FULL-DUPLEX-01` | `P3` | 音频会话协调合同（半双工/全双工通用） | `TODO` | 定义“播放+监听”协调接口和 Fake，半双工/全双工是同一接口的两种实现；依赖 `TTS-01` 的 TTSClient 接口；`TTS-03` 是其第一个实现 |
+| `TTS-03` | `P3` | 增加 SPEAKING 状态 | `TODO` | 半双工第一个实现：走 `FULL-DUPLEX-01` 接口，播放期间暂停 KWS/VAD |
 | `TTS-04` | `P3` | 分句播放、失败降级 | `TODO` | TTS 失败回退终端文本 |
 | `TTS-05` | `P3` | 用户打断策略 | `TODO` | 需要状态机和音频资源管理 |
 | `TTS-06` | `P3` | 唤醒提示替换为“我在，请说” | `TODO` | 系统 TTS 稳定后 |
-| `SOVITS-01` | `P3` | GPT-SoVITS HTTP 服务 | `TODO` | TTS 第一版之后 |
+
+> **全双工（full-duplex）增强组**：`FULL-DUPLEX-01` 已把“播放+监听”抽象为统一接口，
+> 半双工（`TTS-03`）是全双工的第一个实现，全双工只是给同一接口加回声消除后
+> “播放期间继续监听”。半双工下 `TTS-05` 的打断退化为播放分句间隙检测，
+> 真正的连续打断由 `FULL-DUPLEX-02` 承担。核心难点是回声消除（AEC），高度依赖硬件/系统能力。
+> 本组在真实 TTS 接入（`TTS-02`）后展开，任何一项失败都不影响半双工主链。
+
+| `FULL-DUPLEX-02` | `P3` | 打断（barge-in）状态机 | `TODO` | SPEAKING 下检测到用户人声即停止播放并进入 LISTENING；用 Fake TTS 驱动，覆盖打断成功/失败/无说话路径 |
+| `FULL-DUPLEX-03` | `P3` | 回声消除（AEC）能力探测 | `TODO` | 探测当前 Windows 环境可用 AEC（声卡硬件 AEC / 系统回声通道 / WebRTC AEC），产出可行性结论；这是全双工的“决策门”，不达标则后续走降级 |
+| `FULL-DUPLEX-04` | `P3` | 播放期间 KWS/VAD 自声抑制 | `TODO` | TTS 播放时不把自己的声音误判为唤醒词或人声；覆盖播放中唤醒、播放中人声边界 |
+| `FULL-DUPLEX-05` | `P3` | 真实全双工验收 | `TODO` | 真实 TTS + 真实麦克风验证回声消除、打断和不误判；连续边听边说不污染 ASR 原文 |
+| `FULL-DUPLEX-06` | `P3` | 全双工降级策略 | `TODO` | 回声不达标/打断失败时自动退回半双工或提示用耳机，录音与记录不受影响 |
+| `SOVITS-01` | `P3` | GPT-SoVITS HTTP 服务 | `TODO` | TTS 第一版之后；必须实现 `TTS-01` 接口，供 `SOVITS-02` 与系统 TTS 切换回退，禁止另起炉灶 |
 | `SOVITS-02` | `P3` | 超时、缓存、系统 TTS 回退 | `TODO` | 外部服务失败不影响主流程 |
-| `LIVE2D-01` | `P3` | Live2D 表现层接入 | `TODO` | TTS 稳定后 |
+| `LIVE2D-01` | `P3` | Live2D 表现层接入 | `TODO` | TTS 稳定后；口型/表情依赖 `TTS-01` 的播放生命周期回调，不在表现层另做 TTS 驱动 |
 | `AGENT-01` | `P3` | 白名单计时器/提醒/查询/导出 | `TODO` | TTS 与记录闭环后 |
 
 ## 5. TTS 开始条件
@@ -524,6 +677,7 @@ A负责提供稳定消息协议和Mock数据，不应让前端直接读取 `main
 → 输出协调和确认收尾
 → 会话总结、SessionRecord与Markdown/JSON导出
 → 系统TTS
+→ 全双工增强（可选，回声消除能力达标后）
 → GPT-SoVITS、Live2D与Word/PDF美化
 ```
 
@@ -609,6 +763,16 @@ Word/PDF 属于表现层增强，可以在系统 TTS 之后完成。
 | 2026-08-11 | 完成COMMAND-03自然控制表达兼容 | 418项通过（+3项parser/评测测试） | DEFER新增6个安全前缀+跳过后缀；REVIEW新增2条自然模式；Prompt新增uncertain兜底 | 下一项`INTENT-02-REPLY-GATE-02`ANSWER实体填充 |
 | 2026-08-11 | 完成REPLY-GATE-02 ANSWER实体填充 | 422项通过 | AnswerEntityExtractor+answer_clarification；统一理解control分支supplied_entities优化 | 下一项`INTENT-02-REPLY-GATE-03`影子接入执行器 |
 | 2026-08-11 | 完成REPLY-GATE-03 影子位接入执行器 | 422项通过 | 真实会话`20260811_143031`验证CREATE+ANSWER闭环；4轮真实验收修复3个bug（重复ID/cls参数/缺extractor） | 下一项：关旧ingest_analysis或处理已知问题 |
+| 2026-08-12 | 关旧ingest_analysis；修复ControlUnderstanding ValueError未包装回归 | 422项通过 | display_completed_segments新增skip_ingest参数；run_experiment_session内_display包装器自动检测UNIFIED_SHADOW_EXECUTE_ENABLED；新链路活跃时旧LLM分析不再进入ReplyCoordinator | 下一项：真实验收确认无重复问题，然后进入阶段三PRESENT-INTEGRATE-01 |
+| 2026-08-12 | 真实验收INTENT-02-UNIFIED-CUTOVER-01升级REAL_OK | 422项通过 | 会话`20260812_100807` 5段无重复追问，CREATE/ANSWER/REVIEW闭环，结束正常 | 下一项：进入阶段三PRESENT-INTEGRATE-01或先关旧LLM调用 |
+| 2026-08-12 | 关旧SegmentProcessor重复LLM调用→REAL_OK | 422项通过 | 会话`20260812_114401`：6段全部新路径，零旧LLM；修NameError+非实验回退+answer竞态三个bug | `PRESENT-INTEGRATE-01` |
+| 2026-08-12 | 登记新旧路线交接清理5个子任务 | 未改代码 | 不需要真实验收 | `INTENT-02-CLEANUP-FLAGS-01` 去标志位 |
+| 2026-08-12 | 完成项目架构设计文档 + 登记查询/安全/RAG 三类未来任务 | 未改业务代码 | 不需要真实验收 | 先完成 INTENT-02 清理，再做 QUERY-TYPES-01 等类型准备 |
+| 2026-08-12 | main 只读运行审计并同步 docs | `main.py` 语法通过；`.venv` 失效导致导入和全量测试 BLOCKED | 未启动麦克风、ASR或LLM；发现 flag 非法组合、状态先于证据、SessionContext 断链等风险 | `ENV-RECOVERY-02` → 三项 main 一致性修复 → INTENT-02 清理 |
+| 2026-08-12 | 纠正环境误判并恢复可信自动测试基线 | 基础Python与`.venv`均3.11.9；核心依赖/main导入成功；422项1.562秒全部通过 | 未启动麦克风或真实LLM；main导入冷启动约113秒 | `MAIN-FLAG-INVARIANT-01` |
+| 2026-08-13 | 完成 MAIN-FLAG-INVARIANT-01 配置组合不变量 | Python3.11 全量 427 项通过（+5 项配置测试） | config 新增 `validate_shadow_flags` 纯函数并在加载时 fail-fast 拒绝 execute=true/enabled=false；补 `.env.example` 的 `UNIFIED_SHADOW_EXECUTE_ENABLED` | `MAIN-EVIDENCE-COMMIT-01` 澄清动作证据优先提交 |
+| 2026-08-13 | 完成 MAIN-EVIDENCE-COMMIT-01 澄清动作证据优先提交 | Python3.11 全量 428 项通过（+1 项测试） | observe 拆出 `pending_action` 不再执行；main 编排 persist ASR/事件 → commit 状态；证据失败时 ReplyCoordinator 状态不变 | `MAIN-SESSION-CONTEXT-01` 恢复统一链路上下文 |
+| 2026-08-13 | MAIN-EVIDENCE-COMMIT-01 真实验收升级 REAL_OK | 428 项通过 | 会话 20260813_104732：4 段口述 CREATE✅ ANSWER✅ REVIEW✅ 结束✅；ASR 3 段 + 事件 1 段落盘、零重复 LLM；证据先于状态提交 | `MAIN-SESSION-CONTEXT-01` 恢复统一链路上下文 |
 
 ## 7. 每轮结束时必须更新
 
@@ -620,77 +784,3 @@ Word/PDF 属于表现层增强，可以在系统 TTS 之后完成。
 6. 如果文件结构变化，同步更新任务备注和交接文档。
 7. 开发、测试或真实验收中发现的新问题，必须在本清单登记任务 ID 或写入维护日志，不能只保留在对话中。
 8. 新问题需要注明发现来源、影响、依赖关系和建议处理时机；未确定方案时标记为 `TODO` 或 `DESIGN`，不得假装已经解决。
-
-# 补充内容
-知识库+RAG 帮 LLM 更精准地结构化口述（补全缺省参数、纠正专业词、发现 SOP 偏差），用户画像 减少重复追问（记住个人默认值和偏好），两者都是增强现有链路质量而非新增功能模块。
-
----
-当前预留接口建议（3 处，不动业务逻辑）
-
-1. SessionContext 扩展一个可选字段
-
-当前 CTX-01 传"最近 N 条事件"给 LLM。在构建上下文时增加一个可选参数，现在什么都不传：
-
-# 构建 LLM prompt 时
-context = {
-    "recent_events": [...],   # 已有
-    "user_profile": {},       # 新增，当前为空字典
-    "knowledge_hints": [],    # 新增，当前为空列表
-}
-
-user_profile 以后填：默认离心转速、常用体积、交互详细程度等。
-knowledge_hints 以后填：SOP 匹配片段、术语纠错候选、安全提示等。
-
-两个字段今天为空，LLM prompt 构造逻辑不需要改，只是数据结构上占位。
-
-2. PendingClarification 追问增加来源标记
-
-当前 CLARIFY-01/09 的追问结构里，追问只有 source_segment_id 和 missing_fields。增加一个可选字段标记追问的"知识来源"：
-
-{
-    "source_segment_id": 3,
-    "missing_fields": ["离心时间"],
-    "knowledge_source": null   # 新增，以后可以是 "sop:protocol_42" 或 "rag:exp_20260801"
-}
-
-用途：以后知识库触发的追问和 LLM 自己猜的追问可以区别对待——知识库触发的可以降低重复询问频率，LLM 猜的保持现有确认逻辑。
-
-3. ExperimentEvent 实体字段预留标准化引用
-
-当前 LLM-07 产出操作/观察/测量/异常四类事件。实体信息（试剂名、设备名、数值）目前混在 normalized_text 里。在数据结构中增加一个可选的对象字段*：
-
-{
-    "type": "observation",
-    "normalized_text": "溶液变为蓝色",
-    "entities": {               # 新增，当前为 null
-        "reagent": null,
-        "equipment": null,
-        "measured_value": null,
-        "matched_term": null
-    }
-}
-
-matched_term 以后存知识库匹配到的标准术语（如 ASR 的"一液枪"匹配到标准词"移液枪"），reagent 以后可以关联到化学品属性库。
-
----
-优先级
-
-┌─────┬─────────────────┬─────────────┬───────────────────────────┐
-│ 序  │      位置       │    成本     │           收益            │
-│ 号  │                 │             │                           │
-├─────┼─────────────────┼─────────────┼───────────────────────────┤
-│ 1   │ SessionContext  │ 改一处构造  │ 画像和 RAG 都有了注入点   │
-│     │ 加两个空字段    │             │                           │
-├─────┼─────────────────┼─────────────┼───────────────────────────┤
-│     │ PendingClarific │ 改一个数据  │ 区分"有依据的追问"和"猜测 │
-│ 2   │ ation 加 knowle │ 结构        │ 追问"                     │
-│     │ dge_source      │             │                           │
-├─────┼─────────────────┼─────────────┼───────────────────────────┤
-│ 3   │ ExperimentEvent │ 改一个数据  │ 实体可追溯、可纠错、可关  │
-│     │  加 entities    │ 结构        │ 联外部库                  │
-└─────┴─────────────────┴─────────────┴───────────────────────────┘
-
-三处都是纯数据结构预留，不改一行业务判断逻辑。
-
----
-注：这个可能已在你的领域记录设计中被覆盖（OUTPUT_PRESENTATION_POLICY.md 2.1 节的 ExperimentEvent 提到"实体"），如果已有字段就直接用，不需要重复加。

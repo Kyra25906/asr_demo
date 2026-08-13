@@ -2588,3 +2588,166 @@ COMMAND-03（自然表达路由）+ REPLY-GATE-02（ANSWER实体填充）+ REPLY
 3. **提取器不是"没实现"，是"没接入"**：REPLY-GATE-02 实现了 AnswerEntityExtractor 并用 Fake 测了，
    REPLY-GATE-03 接入 main.py 时忘了传。零件造好了但没装上车——和之前 ClarificationExecutor 的"施工单开了没人执行"是同一种问题模式。
 
+
+---
+
+## 2026-08-12：关旧路——让新统一链路成为 ReplyCoordinator 唯一来源
+
+### 目的
+
+之前新旧两条链路并行：旧的 `SegmentProcessor→ingest_analysis→ReplyCoordinator` 和新的 `UnifiedShadowObserver→ClarificationExecutor→ReplyCoordinator` 都会向 ReplyCoordinator 写入，导致同一句口述产生重复追问/确认项。本轮目标是关掉 `ingest_analysis` 这条路，让新链路成为协调器的唯一交互来源。
+
+### 技术路线
+
+在 `display_completed_segments` 函数上新增 `skip_ingest` 参数，`run_experiment_session` 内部创建 `_display` 包装器自动传递 `skip_ingest=UNIFIED_SHADOW_EXECUTE_ENABLED`。旧 `SegmentProcessor` 继续运行（保存 ASR 和事件到磁盘作为数据保险），只是分析结果不再进入 ReplyCoordinator。
+
+### 设计原因
+
+1. **为什么不直接删 SegmentProcessor？** 新链路目前只向 ReplyCoordinator 写入（创建/暂缓/确认问题），不负责 ASR 持久化和事件存储。直接删旧处理器会丢失数据落盘能力。
+
+2. **为什么用 `_display` 包装器而不是在每个调用点加参数？** 11 个调用点分散在 `run_experiment_session` 各处，每个都加 `skip_ingest=...` 容易遗漏且增加噪音。一个本地包装器封装了 `reply_coordinator` 和 `skip_ingest` 两个参数，调用点只需 `_display(segments)`。
+
+3. **为什么不在 `display_completed_segments` 内部直接读配置？** 因为测试文件 `test_reply_coordinator_integration.py` 导入并直接调用 `display_completed_segments`，而 `.env` 里 `UNIFIED_SHADOW_EXECUTE_ENABLED=true` 会导致测试也跳过 `ingest_analysis`，破坏测试预期。显式参数让函数行为由调用者决定，而不是隐式依赖环境变量。
+
+### 实现功能
+
+- `src/main.py`：`display_completed_segments` 新增 `skip_ingest: bool = False` 参数；`run_experiment_session` 内新增 `_display` 本地包装器，所有 12 个调用点替换为 `_display(segments)`
+- `src/core/unified_understanding.py`：修复回归——`ControlUnderstanding.__post_init__` 的 `ValueError` 现在被 `parse_unified_understanding` 中扩展的 try/except 捕获并转为 `UnifiedUnderstandingError`
+
+### 本轮知识
+
+1. **环境变量泄露到测试**：`.env` 中的配置会在测试运行时被读取。如果一个模块级函数直接读 `os.environ` 或通过 `config.read_bool()` 做决策，测试就会依赖环境。解决方案是"依赖注入"——把决策权交给调用者，通过参数传递。
+
+2. **防御性 `__post_init__`**：dataclass 的 `__post_init__` 抛出的异常类型需要和上层期望一致。本轮的 bug 就是 `ControlUnderstanding.__post_init__` 抛出 `ValueError`，但 `parse_unified_understanding` 只捕获了 `IntentCandidate` 构造中的异常，没覆盖 `ControlUnderstanding` 构造。修复方式是扩大 try/except 范围，让二者都被转为 `UnifiedUnderstandingError`。
+
+3. **渐进式关旧路**：切换新旧链路最安全的方式不是一次性删除——而是先让旧链路"失活"（结果不进入下游），保留作为数据保险。确认新链路稳定后再移除旧的处理逻辑。
+
+### 验收方法
+
+```powershell
+.\.venv\Scripts\python.exe -B -m unittest discover
+# 预期：Ran 422 tests in ... OK
+```
+
+正常路径：`UNIFIED_SHADOW_EXECUTE_ENABLED=true` 时新链路执行、旧 `ingest_analysis` 被跳过；`false` 时行为与原来完全一致。
+
+待真实验收：开启 `UNIFIED_SHADOW_EXECUTE_ENABLED=true` 进行真实口述会话，确认（1）不再出现重复追问/确认项；（2）ASR 和事件文件正常保存；（3）结束命令正常工作。
+
+### 下一步
+
+真实验收确认无重复问题后，进入阶段三 `PRESENT-INTEGRATE-01`（最小消息链路），或先处理两个已知问题：LLM 不稳定误判 abstention、启动慢（MODEL-LOAD-02）。
+
+---
+
+## 2026-08-12：关旧 SegmentProcessor 重复 LLM 调用（INTENT-02-LLM-DEDUP-01）
+
+### 目的
+
+统一链路活跃时，每一段实验口述 DeepSeek 被调了两次——新链路一次、旧 SegmentProcessor 一次。旧链路的结果虽然存盘但不再进入 ReplyCoordinator（skip_ingest=True），属于纯 token 浪费。本轮把旧 LLM 调用关掉，ASR 和事件的存储职责从旧 SegmentProcessor 迁移到 main 主流程，用新链路已经算好的 AcceptedExperimentAnalysis 直接落盘。
+
+### 技术路线
+
+数据流改变——
+
+修改前：
+```
+ASR → 新链路(LLM 1次) → ReplyCoordinator（执行）
+    → 旧submit() → SegmentProcessor.process():
+        → ASR落盘 → 旧LLM(第2次) → 事件落盘 → 上下文更新
+```
+
+修改后：
+```
+ASR → 新链路(LLM 1次) → ReplyCoordinator（执行）
+                      → AcceptedExperimentAnalysis
+                           → ASR落盘（main直接调asr_store）
+                           → 事件落盘（to_process_outcome() → event_store）
+    → 旧submit() 仅在统一链路关闭时走（回退路径）
+```
+
+涉及模块：`unified_shadow.py`（ShadowObservation 加字段）、`unified_acceptance_bypass.py`（已有数据，不变）、`main.py`（核心分叉逻辑）、`experiment_acceptance.py`（to_process_outcome 适配器，已有）。
+
+### 设计原因
+
+**为什么不在 SegmentProcessor 里加 skip_llm 参数？**
+
+SegmentProcessor 是一个原子操作——它的 process() 五步是耦合的：ASR 保存 → 上下文 → LLM → 事件保存 → 上下文更新。如果只跳过 LLM，就没有事件可以保存，存储职责反而落空了。不如在更上层（main 主循环）直接做分支：新链路活跃时存储完全由 main 接管，旧链路关闭时 SegmentProcessor 原样不动。这样两套行为不会互相干扰。
+
+**为什么用 AcceptedExperimentAnalysis 而不是重新调 LLM？**
+
+新链路已经调过 DeepSeek、产出过实验分析、通过了 ExperimentCandidateAcceptor 的严格校验。这个分析结果在 ShadowObserver 内部被创建、取几个字段、然后丢弃。我们做的事就是别让它被丢弃——透传出来，通过已有的 to_process_outcome() 适配器转换成 event_store 能接受的格式。零额外 LLM 调用，零重复计算。
+
+**TYPE_CHECKING 的作用是什么？**
+
+`unified_shadow.py` 导入了 `AcceptedExperimentAnalysis` 类型注解，但只用于类型检查阶段（`if TYPE_CHECKING:`），运行时不会真正导入。这是为了避免循环导入（unified_shadow → experiment_acceptance → unified_dispatch → ...），同时保持 IDE 和类型检查器能正常工作。实际运行时，`accepted_analysis` 的值来自 `UnifiedAcceptanceBypassResult.accepted_experiment`，类型在那边已经确定。
+
+**错误处理为什么不对称？**
+
+ASR 保存失败 → `continue`（跳过整段，不继续事件保存）。因为 ASR 是原始证据，丢了就什么都没了。
+事件保存失败 → 只打印警告，不 `continue`。因为 ASR 已经安全落盘，事件丢失不影响原始事实的可追溯性。这与旧 SegmentProcessor 的设计哲学一致：事实先存，分析可以降级。
+
+### 实现功能
+
+| 文件 | 改动 | 说明 |
+|---|---|---|
+| `src/core/unified_shadow.py` | `ShadowObservation` 新增 `accepted_analysis` 可选字段 | 用 TYPE_CHECKING 避免循环导入；`observe()` 把已有的 accepted 值填入 |
+| `src/main.py` | `run_experiment_session()` 普通实验路径分叉 | 新链路活跃且有分析结果时：直接 ASR+事件落盘，跳过 submit()；否则走旧回退路径 |
+
+### 本轮知识
+
+1. **关注点分离（Separation of Concerns）**：SegmentProcessor 负责"接收 ASR → 调 LLM → 存结果"这个完整流程。当其中一步（LLM 调用）在其他地方已经做了，不改 SegmentProcessor 内部，而是在调用方（main）做分叉。这保持了 SegmentProcessor 的内部一致性，把策略决策留给编排层。
+
+2. **适配器模式（Adapter Pattern）**：`AcceptedExperimentAnalysis.to_process_outcome()` 就是一个适配器——它把新链路的不可变快照转换成旧存储边界能接受的 `ProcessOutcome[LLMAnalysisResult]` 格式。适配器的价值在于让新旧两套代码不用互相知道对方的存在。
+
+3. **TYPE_CHECKING 守卫**：Python 的 `from __future__ import annotations` + `if TYPE_CHECKING:` 组合可以在不产生运行时循环导入的前提下，保持完整的类型注解。这对于有多个相互引用数据类的项目特别有用。
+
+4. **错误处理的分级策略**：不是所有失败都应该中断流程。ASR 保存失败 → 跳过整段（证据丢失不可接受）；事件保存失败 → 记录警告但继续（分析可以补，事实不能丢）。这种分级根据"数据的重要程度"来决定，而不是统一 try/except。
+
+5. **数据透传 vs 重复计算**：当你发现一个计算结果被创建后只取了部分字段就丢弃了，首先要问的是"能不能把完整的也带出来"，而不是"在另一个地方重新算一遍"。ShadowObserver 内部的 `accepted` 对象就是这种情况。
+
+### 验收方法
+
+```powershell
+.\.venv\Scripts\python.exe -B -m unittest discover
+# 预期：Ran 422 tests ... OK
+```
+
+正常路径验证（单元测试已覆盖）：ShadowObservation 的 accepted_analysis 正确透传；to_process_outcome() 产出可保存的 ProcessOutcome。
+
+待真实验收：开启 `UNIFIED_SHADOW_EXECUTE_ENABLED=true` 进行真实口述会话，观察（1）每段只调一次 LLM（终端日志中旧 SegmentProcessor 的 LLM 请求不再出现）；（2）ASR 和事件照常保存；（3）结束命令正常工作。
+
+### 下一步
+
+真实验收确认省 token 效果后，进入阶段三 `PRESENT-INTEGRATE-01`（最小消息链路）。
+
+## 2026-08-12：先区分沙箱权限失败与虚拟环境损坏
+
+- **现象**：在受限沙箱中执行 `.venv\Scripts\python.exe` 报“拒绝访问/无法创建进程”，强行用 Python 3.14 加载 3.11 的 site-packages 又缺少 `_cffi_backend`。
+- **正确诊断**：先检查 `pyvenv.cfg` 和基础解释器文件是否存在，再在获准执行边界中运行两个 `python --version`。结果基础解释器和 `.venv` 都是 Python 3.11.9，环境没有损坏。
+- **为什么不能混用版本**：`sounddevice`、`cffi` 等包含与 Python ABI 绑定的二进制扩展，Python 3.14 不能直接复用 Python 3.11 虚拟环境的扩展模块。
+- **验收证据**：核心依赖和 `src.main` 导入成功；全量 `Ran 422 tests in 1.562s`，结果 `OK`。导入 FunASR/ModelScope/Torch 冷启动约 113 秒，属于性能问题而非正确性失败。
+- **工程经验**：工具或沙箱报告的 `Access denied` 先归类为执行边界问题，不应立即执行重装或删除虚拟环境。恢复动作必须以只读检查和最小验证为先。
+
+## 2026-08-12：文档也需要单一事实来源
+
+- **问题**：多个日期交接、项目总览、任务清单和架构文档同时描述“当前状态”和“下一项”，随着开发推进会互相矛盾。
+- **治理方式**：用 `docs/README.md` 建立入口；任务清单独占状态和优先级；下一会话交接只保留短摘要；架构、环境和输出政策只维护稳定规范；日期文档冻结为历史快照。
+- **为什么不删除历史文件**：旧会话编号、测试数量和当时决策仍是审计证据。正确做法是标记时间边界和权威顺序，而不是把历史证据伪装成现行说明或直接丢弃。
+- **领域建模经验**：未来扩展不能为了”占位”把检索元数据塞进实验事实或追问生命周期。`KnowledgeEvidence`、实验事件和待确认项应保持不同的数据所有者和信任边界。
+
+## 2026-08-13：配置不变量用 fail-fast 而非运行时兜底
+
+- **问题**：`UNIFIED_SHADOW_EXECUTE_ENABLED=true` 且 `UNIFIED_SHADOW_ENABLED=false` 时，`shadow_observer` 为 None，`observation` 从未赋值，但 main 后面仍读 `observation.accepted_analysis`，触发 NameError。
+- **修复思路**：不修运行时（在读取处加 if 兜底），而是在配置加载时用不变量校验 fail-fast。运行时兜底会掩盖配置错误，把问题推迟到用户已经跑起来之后；fail-fast 让错误在启动第一刻暴露，信息明确、位置集中。
+- **为什么抽成纯函数**：把 `validate_shadow_flags(enabled, execute)` 抽成独立函数，测试可以直接覆盖正常/边界/非法组合，不必依赖环境变量或重新加载模块。校验逻辑和”配置读取”解耦，符合”测试公共接口，不依赖私有实现”。
+- **reload 测试**：用 `importlib.reload(config)` + `patch.dict(os.environ)` 验证”配置加载时真的会 fail-fast”，并在 finally 里再次 reload 恢复模块，避免污染后续测试。这测的是”时机”（加载即失败），而纯函数测试测的是”规则”（哪些组合非法）。
+- **验收证据**：全量 `Ran 427 tests in 1.048s — OK`，较基线新增 5 项配置测试。
+
+## 2026-08-13：状态提交顺序——prepare→persist→commit
+
+- **问题**：`ClarificationExecutor` 直接改 ReplyCoordinator 状态，而 ASR 证据在 main 里 observe 之后才落盘。证据写入失败时状态已经变了，出现"状态说确认了，但证据没存下来"的自相矛盾。
+- **修复思路**：把"执行"从 observe 里拆出来——observe 只负责"准备"（规划 action，返回 `pending_action`），main 负责"持久化证据"（写 ASR + 事件），证据都成功后才"提交"（执行 executor 改状态）。
+- **为什么 observe 不该执行**：观察器（Observer）的职责是"看"，不是"做"。之前 observe 内部调用 executor，把"观察"和"执行"耦合，无法在两者之间插入"证据落盘"。拆开后 main 成为唯一编排者，可自由决定"何时观察、何时写证据、何时改状态"。
+- **现有范例**：`ReplyCoordinator.prepare_confirmation` / `commit_confirmation` 早就是 prepare→commit 模式，`try_handle_confirmation_answer` 已把它串成"准备→保存 ASR→保存记录→提交"。本轮只是让新链（ClarificationExecutor 路径）对齐这个已有模式，而非新造一套。
+- **frozen dataclass 的不可变性**：ShadowObservation 是 frozen，不能直接改 executed 字段。用 `dataclasses.replace` 生成新实例，而不是违反不可变性去 setattr。
+- **验收证据**：全量 `Ran 428 tests in 1.047s — OK`，新增 1 项测试验证 observe 只规划不执行。

@@ -115,6 +115,22 @@ class UnifiedShadowObserverTests(unittest.TestCase):
         self.assertEqual(coordinator.active_clarifications(), before)
         self.assertEqual(bypass.inputs[0].clarification_context.unresolved, before)
 
+    def test_observe_returns_pending_action_without_executing(self):
+        coordinator = ReplyCoordinator()
+        before = coordinator.active_clarifications()
+        bypass = FakeBypass(result=Result())
+        observation = UnifiedShadowObserver(bypass).observe(
+            request_id="shadow-session-1-segment-4",
+            session_id="session-1",
+            segment_id=4,
+            asr_result=asr(),
+            reply_coordinator=coordinator,
+        )
+        self.assertIsNotNone(observation.pending_action)
+        self.assertEqual(observation.pending_action.action_type.value, "create")
+        self.assertFalse(observation.executed)
+        self.assertEqual(coordinator.active_clarifications(), before)
+
 
 if __name__ == "__main__":
     unittest.main()
