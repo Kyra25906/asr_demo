@@ -2811,3 +2811,27 @@ ASR 保存失败 → `continue`（跳过整段，不继续事件保存）。因�
 - **证据三：统一链的鲁棒性 vs 旧门卫的脆弱**。第 2 段"看待确认问题"是 ASR 把"查看"听成了"看待"——**旧命令门卫不认识这个词**（旧逻辑会当普通口述/或漏处理），但统一链的 LLM 正确理解为 review 并执行只读动作；第 6 段"还有什么问题？"则命中了解析器的自然表达模式，走**精确快速路径、零 LLM 调用**。同一个意图，两条路径都能处理——这正是"精确快速路径 + 统一 LLM 兜底"架构设计（INTENT-02-ARCH-01）的实战验证。
 - **附加发现：之前"卡住"的真相**。9:54 那次启动长时间无输出，是因为**首次冷缓存下载 SenseVoice 模型（20 文件）+ VAD 模型（8 文件）**，不是程序卡死。教训：**"没输出"要先区分"在下载/加载"和"真卡死"**——看进程 CPU、网络、缓存目录增长，别急着 Ctrl+C。模型缓存好后，后续启动显著加快。
 - **测试基线**：438 项通过。任务状态 `AUTO_OK → REAL_OK`。下一步 `INTENT-02-CLEANUP-SUBMIT-01` 删旧 submit 残留。
+
+## 2026-08-14：清残骸——删旧链 847 行（AUTO_OK）
+
+- **改了什么**：main.py 里旧链路的全部残留一次性拔除——`create_experiment_llm_processor`（旧 LLM 处理器工厂）、`SegmentProcessor`/`SessionProcessingQueue`/`CompletedSegment` 的使用与 import、四个旧显示函数（`display_segment_result`/`display_completed_segment(s)`/`display_coordinated_reply`）、`_display` 闭包及其 11 个调用点、`collect_ready`/`finish`/`pending_count` 全部调用、外层 try/finally 的队列收尾块。统一链的事件落盘从 `segment_processor.event_store.append_analysis` 改为 main 自己持有的 `event_store.append_analysis`。连带删除 `tests/test_reply_coordinator_integration.py`（260 行，测的正是被删的旧显示+ingest 流程）。
+- **知识点：共用零件的迁移顺序（先搬家、再拆屋）**。`event_store` 原本是 `SegmentProcessor` 的属性，但 main() 早就自己创建了同一个 `ExperimentEventStore` 实例并注入进去——所以改一行 `segment_processor.event_store.` → `event_store.` 就把"共用零件"搬到了新家，然后整个旧处理器才能安全拆除。**拆旧屋前先确认共用件有新归属**，否则拆完发现新链还指着旧屋里的东西。
+- **知识点：删测试和删功能是一体的**。`test_reply_coordinator_integration.py` 测的 `display_completed_segments` + `ingest_analysis` 流程正是被删的旧链路。功能没了，测试必须跟着删——测试数从 438 → 433（−5）是"删对了"的信号。ReplyCoordinator 本身的行为（最多一条回复、指定回答等）仍由 `test_reply_coordinator.py`/`test_clarification_*` 覆盖，没有真实覆盖损失。
+- **知识点：删除死代码会遇到"语法连锁"**。外层 `try:` 的唯一存在理由是包住 `finally:` 队列收尾；收尾删了，`try:` 成了"光杆司令"（Python 语法要求 try 必须有 except/finally），必须连带删掉并把循环体整体减缩进 4 格——**删除会沿语法结构连锁**，删一个块往往要调整整个包含它的作用域。用脚本做机械缩进变换 + py_compile 兜底，比手改 300 行安全。
+- **结果**：main.py 从 1199 行 → 866 行左右（净删 847 行 diff），主循环只剩"录音→观察→门卫→落盘"一条直线，没有任何旧链分支。全量 433 项通过，待真实会话不退化复验。
+
+## 2026-08-14：真实验收抓出单测盲区——跨函数作用域的 NameError（REAL_OK）
+
+- **首轮复验（会话 101632/101744）失败**：每段实验口述报"事件保存失败：NameError: name 'event_store' is not defined"，事件全丢、上下文 0。**这是 SUBMIT-01 重构引入的真 Bug**：我把 `segment_processor.event_store.append_analysis` 改成 `event_store.append_analysis`，但 `event_store` 创建在 `main()` 里，`run_experiment_session` 是另一个函数、作用域里根本没有这个名字——**跨函数作用域错误（scope error）**。修复：把 `event_store` 作为参数传入 `run_experiment_session`。
+- **为什么 433 项单测全绿却漏掉它**：没有任何测试执行 `run_experiment_session` 主循环——单测测的是"零件"（observer/executor/store 各自的行为），而这次 bug 出在"零件之间的接线"（main 把谁传给谁）。**接线错误只能由端到端验收发现**——这正是项目"改 main 必须真实验收"规矩的实证：上次 095506 复验没暴露，是因为当时代码里还没有这个引用；这次重构改了引用，真实验收立刻现形。
+- **错误分级设计的双面性**："事件保存失败只警告、不中断"让系统优雅降级（ASR 保住、继续监听、不崩），但也**把系统性故障伪装成了偶发警告**——每段都失败，日志却和偶发失败长得一样。教训：**持续性失败需要更强的可见性**（如连续 N 次失败升级为醒目提示）。记入稳定性任务考虑。
+- **终验（会话 102122）通过**：3 段口述"提交 2 段实验口述"、上下文 2 = 事件数、无事件保存失败、无"当前待处理任务数"。ASR 105 条（+3）、事件 52 条（+2 仅段 1、3）。任务状态 `AUTO_OK → REAL_OK`。下一步 `INTENT-02-CLEANUP-COMMAND-01` 统一命令入口（顺带修 REVIEW-OUTPUT-01 查看显示）。
+
+## 2026-08-14：用户提问暴露的功能缺口——"接了活但没交差"的 review 显示
+
+- **现象（用户发现的）**：会话 095506 中，第 2/4 段"看待确认问题"（ASR 把"查看"听成"看待"）被统一链正确理解为 review，但只显示"第 2 段已保存"，**没有输出"当前没有待确认问题"**；而第 6 段"还有什么问题？"走了旧门卫，正常显示。
+- **根因**：`ClarificationExecutor` 的 REVIEW 分支只返回 `state_changed=False, reason="REVIEW 是只读动作"`——它**不携带待确认列表、也没有渲染步骤**。"当前没有待确认问题。"这句话来自旧命令门卫的 `display_clarification_command_result`，但那个显示只在解析器**精确匹配**到命令时执行。
+- **教训一：验收要覆盖"同一意图的两种路径"**。093515 没暴露这个缺口，是因为那次"查看待确认问题"识别正确、走了旧门卫；095506 听岔了才走上新链路径。**只测标准说法，会漏掉"降级路径"的行为差异**——测试和验收脚本都应该包含"说歪了"的输入。
+- **教训二：只读动作≠无输出**。REVIEW 语义上"不改状态"，但用户要的是"看到结果"。区分**副作用（side effect）与用户可见输出（user-visible output）**：read-only 只是不做前者，后者该做还得做。新链把"执行"和"展示"一起漏掉了。
+- **已登记**：`INTENT-02-REVIEW-OUTPUT-01`（P1，随 `CLEANUP-COMMAND-01` 删旧门卫时把显示职责搬进新链）。
+- **连带话题：ASR/VAD 识别不准**。095506 出现"查看→看待"、"还有什么问题→难有什么问题"等误识别。项目已有固定语料评测体系（ASR-CMD-01 REAL_OK、ASR-CMD-REC 语料采集工具），后续按现有任务推进：把新误识别样例纳入语料 → ASR-03 专业词评测集 → ASR-CMD-02 对照实验（热词/后处理）→ AUDIO-PREROLL 处理截音。**这次"新链兜底接住了误识别"恰好证明：识别不准时，语义理解层是最后一道防线**——但防线不该替代前端识别质量。

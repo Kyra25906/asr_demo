@@ -10,21 +10,22 @@
 
 - 正式解释器：Python 3.11.9，项目 `.venv` 可用。
 - 核心依赖和 `src.main` 导入成功；冷启动约 113 秒。
-- 全量自动测试：`Ran 438 tests in 1.358s — OK`。
+- 全量自动测试：`Ran 433 tests in 1.232s — OK`。
 - `MAIN-SESSION-CONTEXT-01` 统一链路上下文：**REAL_OK**（会话 `20260814_092200`）。
 - `MAIN-RUNTIME-HARDEN-01` 运行边界整理：**REAL_OK**（会话 `20260814_093515`）。
-- `INTENT-02-CLEANUP-FLAGS-01` 去标志位：**REAL_OK**（会话 `20260814_095506` 不退化复验通过；两个 shadow flag 已删，新链唯一默认路径）。
-- 最近真实会话：`20260814_095506`。
-- main 仍保留旧 submit 回退代码（已不可达）和旧命令门卫，等待后续清理。
+- `INTENT-02-CLEANUP-FLAGS-01` 去标志位：**REAL_OK**（会话 `20260814_095506`）。
+- `INTENT-02-CLEANUP-SUBMIT-01` 去旧 submit 残留：**REAL_OK**（main 净删 847 行；首轮复验抓出 event_store 未传参 Bug 已修复；会话 `20260814_102122` 复验通过）。
+- 最近真实会话：`20260814_102122`。
+- main 仍保留旧命令门卫（clarification/confirmation/targeted answer），等待 COMMAND-01 统一。
 - 工作区存在用户累计未提交修改；不得覆盖、回退或混入无关变更。
 
 ## 2. 当前唯一下一项
 
-`INTENT-02-CLEANUP-SUBMIT-01`：删旧 submit 相关残留。
+`INTENT-02-CLEANUP-COMMAND-01`：统一命令入口。
 
-1. 删除 `display_completed_segments` 的 `skip_ingest` 参数与"跳过旧 ingest"补丁（统一链已接管，恒为跳过）；
-2. 删除 main 中不再使用的旧链路组件（`SegmentProcessor` 的 LLM 路径、`SessionProcessingQueue.submit` 等）——注意 `segment_processor.event_store` 仍被统一链用于事件落盘，剥离时保持该引用；
-3. 完成后 `src.main` 中旧 SegmentProcessor LLM 路径从 main 消失。
+1. 消除三道旧门卫（`try_handle_clarification_command`、`try_handle_confirmation_answer`、`resolve_targeted_answer` 的旧处理路径）和 `_new_chain_handled_answer` 补丁；
+2. 每种命令有且只有一条处理路径（统一链 ClarificationExecutor）；
+3. 顺带实现 `INTENT-02-REVIEW-OUTPUT-01`：统一链识别到 review 时显示待确认列表或"没有待确认问题"（旧门卫的显示职责搬进新链）。
 
 真实会话核验工具：`.\.venv\Scripts\python.exe -B -m scripts.verify_session_context <session_id>`（输出 ASR 段数、事件数、预期上下文计数）。
 
@@ -52,6 +53,7 @@ MAIN-SESSION-CONTEXT-01（REAL_OK）
 | `P1` | `experiment_segment_count` 在确认实验分析前加一 | **已修（2026-08-14，REAL_OK）**：`is_experiment_evidence` 判定，只统计实验/降级证据段；会话 20260814_093515 复验通过 |
 | `P1` | 持续唤醒错误立即重试 | **已修（2026-08-14）**：`src/core/retry.py` 指数退避 1→2→4→8→10s 封顶，成功重置，Ctrl+C 不受影响 |
 | `P2` | Answer 执行器有重复 `if not supplied_fields` | **已修（2026-08-14）**：删除不可达重复分支 |
+| `P1` | 统一链识别到 review 时无查看结果输出（只显示"已保存"） | `INTENT-02-REVIEW-OUTPUT-01`：review 动作显示待确认列表或"没有待确认问题"；随 `CLEANUP-COMMAND-01` 删旧门卫时把显示职责搬进新链 |
 
 ## 5. 恢复命令
 
