@@ -62,7 +62,7 @@ cd C:\Users\dahli\Desktop\asr_demo
 
 ## 3. 当前唯一下一项
 
-> `MAIN-EVIDENCE-COMMIT-01` AUTO_OK。`MAIN-SESSION-CONTEXT-01` REAL_OK。`MAIN-RUNTIME-HARDEN-01` REAL_OK。`INTENT-02-CLEANUP-FLAGS-01` REAL_OK。`INTENT-02-CLEANUP-SUBMIT-01` REAL_OK。`INTENT-02-CLEANUP-COMMAND-01` REAL_OK。当前唯一下一项为 `INTENT-02-CLEANUP-NAMING-01`：去影子命名。
+> 清理五连前四刀已闭环：`MAIN-SESSION-CONTEXT-01`/`MAIN-RUNTIME-HARDEN-01`/`INTENT-02-CLEANUP-FLAGS-01`/`INTENT-02-CLEANUP-SUBMIT-01`/`INTENT-02-CLEANUP-COMMAND-01` 全部 REAL_OK；A+B（34/35/36）与显示一致性 REAL_OK；`INTENT-02-CLEANUP-NAMING-01` AUTO_OK（待一次轻量真实复验）。**当前待办**：NAMING 轻量复验 → GAPS 修复（3.1A 行 7-10）→ `INTENT-02-CLEANUP-VERIFY-01` 总验收。
 
 当前 P0 顺序：
 
@@ -72,7 +72,8 @@ MAIN-SESSION-CONTEXT-01 REAL_OK
 → INTENT-02-CLEANUP-FLAGS-01 REAL_OK
 → INTENT-02-CLEANUP-SUBMIT-01 REAL_OK
 → INTENT-02-CLEANUP-COMMAND-01 REAL_OK
-→ INTENT-02-CLEANUP-NAMING-01
+→ INTENT-02-CLEANUP-NAMING-01 AUTO_OK（待轻量复验）
+→ GAPS 修复（GAPS-FIX-END/DEFER/ANSWER-HINT/REVERIFY）
 → INTENT-02-CLEANUP-VERIFY-01
 ```
 
@@ -98,7 +99,24 @@ QUERY-TYPES-01 + SAFETY-TYPES-01 + KNOWLEDGE-PROTOCOLS-01 （并行，纯类型�
 
 ## 3.1 当前执行看板
 
-这一部分只放“近期真正要做的事”。下面第4节仍保存完整任务库和历史证据。
+> 本看板只放近期事项；完整任务库与历史证据见第 4 节和维护日志。
+
+### 3.1A 待办看板（未闭环）
+
+| 顺序 | 优先级 | 任务 | 当前状态 | 本轮要得到的结果 | 进入下一项的条件 |
+|---:|---|---|---|---|---|
+| 1 | `P0` | `INTENT-02-CLEANUP-VERIFY-01` 清理后真实验收 | `TODO` | 五类口述连续会话验收 | 全量测试通过且真实功能不减 |
+| 2 | `P1` | Query/Safety/Knowledge 三组合同与 Fake | `TODO` | 独立类型和协议，不接 main | **清理后第一批** |
+| 3 | `P1` | QUERY 第四分支与只读分派 | `TODO` | unified 识别 QUERY，路由到知识查询边界 | 不接真实设备服务或 RAG |
+| 4 | `P2` | 安全、RAG、查询真实接入与 E2E | `TODO` | 见第 I.2 节 | PRESENT 与团队服务合同稳定后 |
+| 5 | `P1` | `ASR-ROBUSTNESS-RULE-GAPS-01` 鲁棒性旁路缺口修复 | `TODO` | 真实旁路报告 7 个缺口逐项定案：规则/提示词/确定性兜底 | 来源：`INTENT-02-ASR-ROBUSTNESS-01` 真实旁路（deepseek-v4-flash，21/28 一致）。7 缺口 + **用户 2026-08-14 逐项决策**：①段3"加热到60摄氏度"当新实验事件 → **接受当实验**，另加"回答问题请指定编号"显示提示；②段7/14 同音错词确认不稳定 → **先走 ASR 层修复**（热词/后处理），提示词暂不动，演示场景未定故不深做；③段17 "PH"（实为 ASR 听成"PHG"）过度确认 → **再测**，暂不修；④段18"不对，应该是7.4"被 LLM 判为 targeted_answer（精确解析为 deny）→ **否定修正不做**，当实验记录展示；⑤段20"再加50毫升"、段25"电流显示80毫安"过度判为回答 → **提示词已收紧**，**再测**（重跑旁路报告确认现状）；⑥⑦ 不存在（报告恰 7 段不一致，归为 ①-⑤ 五类） |
+| 6 | `P1` | `ASR-ROBUSTNESS-RULE-GAPS-02` 鲁棒性复验补充观察（112047/112445，用户已逐项决策） | `TODO` | 5 项补充观察按决策执行 | 用户 2026-08-14 决策：**A**（"问题一先跳过"→answer 漏 DEFER）→ **修**；**B**（"暂缓问题一"→abstention 漏 DEFER）→ **修**（与 A 同根因：意图 schema 无"按编号暂缓"，需新增 defer_targeted 或等效处理）；**C**（"不对，应该是7.4"→no_action）→ **纠正记录**：不是 deny 大模型问题，定性为"修正历史记录"类需求，先不做、当实验记录展示；**D**（自然结束语→观察失败 ValueError）→ **方案二：固定结束语**（LLM 识别结束意图时提示"请说'结束实验记录'"，只有精确命令结束；方案一"确认后关闭"留待有时间再做）；**E**（"仍需补充：空"）→ **已修**（显示一致性轮），**再测**并入下次真实会话；**F**（"再加50毫升"→abstention）→ **先不管**。另：段9"一夜枪"未触发确认（缺口②不稳定复现）随②走 ASR 层 |
+| 7 | `P1` | `GAPS-FIX-END-01` D 自然结束语：固定结束语方案（方案二） | `TODO` | LLM 识别到结束意图时，提示"请说'结束实验记录'结束会话"，不结束；只有精确命令结束；不再出现"观察失败 ValueError" | 用户决策（2026-08-14）：先方案二（改动小、演示可控），方案一"一次确认后关闭"留待有时间再做。实现点：旁路对 end_session 目标不再抛 ValueError（返回只读 NO_ACTION），main 检测到结束意图显示提示并继续监听 |
+| 8 | `P1` | `GAPS-FIX-DEFER-01` A/B 按编号暂缓（defer_targeted） | `TODO` | "暂缓问题一"/"问题一先跳过"正确执行为按编号暂缓 | 用户决策（2026-08-14）：A/B 修。根因：意图 schema 的 control command_type 无"按编号暂缓"（只有 defer_current），LLM 对编号暂缓无所适从（判 answer/abstention）；需扩展 schema+planner+executor 支持 defer_targeted（中等改动），或采用等效处理 |
+| 9 | `P1` | `GAPS-FIX-ANSWER-HINT-01` ① 回答需指定编号提示 | `TODO` | 存在待确认问题时，被当实验处理的短句旁提示"回答请指定问题编号（如'问题一，…'）" | 用户决策（2026-08-14）：① 接受当实验（LLM 自由判断），但加显示提示引导用户回答时带编号；纯显示层小改动 |
+| 10 | `P1` | `GAPS-REVERIFY-01` ③⑤E 复验 + ②现状复查 | `TODO` | 重跑旁路报告验证⑤（提示词收紧后）与②；真实会话复验③（PHG 段）、E（仍需确认显示）、D（自然结束语提示）、DEFER | 用户决策（2026-08-14）：③再测、⑤再测、E再测；②先走 ASR 层。复验脚本：实验→追问→"先跳过"→查看→"时间为10分钟"→PH 句→自然结束语→"结束实验记录" |
+
+### 3.1B 已完成看板（近期已闭环，证据详见维护日志）
 
 | 顺序 | 优先级 | 任务 | 当前状态 | 本轮要得到的结果 | 进入下一项的条件 |
 |---:|---|---|---|---|---|
@@ -129,17 +147,11 @@ QUERY-TYPES-01 + SAFETY-TYPES-01 + KNOWLEDGE-PROTOCOLS-01 （并行，纯类型�
 | 25 | `P0` | `INTENT-02-CLEANUP-SUBMIT-01` 去旧 submit 分支 | `REAL_OK` | 删除旧 submit、skip_ingest 和旧显示补丁 | 旧 SegmentProcessor LLM 路径从 main 消失：删 `create_experiment_llm_processor`、`SegmentProcessor`/`SessionProcessingQueue`/`CompletedSegment` 使用与 import、四个旧显示函数、`_display` 及全部 `collect_ready/finish/pending_count` 调用、外层 try/finally 队列收尾；统一链事件落盘改用 `event_store`；删 `tests/test_reply_coordinator_integration.py`；main.py 净删 847 行；全量 433 项通过。真实会话 `20260814_102122` 复验通过：3 段口述"提交 2 段实验口述"、上下文 2 = 事件数、无事件保存失败、无"当前待处理任务数"。首轮复验（`20260814_101632/101744`）抓出重构 Bug：`event_store` 未作为参数传入 `run_experiment_session` 导致 NameError、事件全丢（上下文 0）；补传参修复后复验通过——真实验收成功拦截单测盲区 |
 | 26 | `P0` | `INTENT-02-CLEANUP-COMMAND-01` 统一命令入口 | `REAL_OK` | 消除三道旧门卫和 `_new_chain_handled_answer` 补丁 | 主循环删除 targeted-answer/clarification/confirmation 三道门卫及补丁，统一链成为唯一命令路径；搬入新链三件职责：① review 显示（`display_review_result`，修复 `INTENT-02-REVIEW-OUTPUT-01`）② confirm 动作确认记录持久化（`ConfirmationRecord.from_executed_confirmation` + `ReplyCoordinator.find_clarification`）③ 执行反馈；删 `test_confirmation_main.py`；全量 432 项通过。真实会话 `20260814_104104`：20 段口述——查看显示多次生效（"当前没有待确认问题"/"当前共有 N 个"）、create 追问 3 次、answer 指定回答 3 次解决 2 个问题、计数"提交 6 段"、上下文 6 = 事件数、剩余问题列出；**附注**：确认记录真实路径未触发（无 needs_confirmation 场景，单测覆盖，VERIFY-01 补"水域/水浴"式场景） |
 | 27 | `P0` | `INTENT-02-CLEANUP-NAMING-01` 去影子命名 | `AUTO_OK` | 观察器等改为正式执行链命名 | `unified_shadow.py`→`unified_observer.py`；`UnifiedShadowObserver`→`UnifiedObserver`、`ShadowObservation`→`UnifiedObservation`、`ShadowObservationStatus`→`UnifiedObservationStatus`、`create_unified_shadow_observer`→`create_unified_observer`、`display_shadow_observation`→`display_observation`、`shadow_observer`→`observer`、`shadow_executor`→`executor`、request_id 前缀 `shadow-`→`unified-`、显示前缀 `[新系统影子]`→`[统一链]`、docstring 去"影子"；`tests/test_unified_shadow.py`→`test_unified_observer.py`（类名同步）；src/tests 零 shadow 残留；全量 468 项通过；待一次轻量真实会话确认不退化（显示前缀 `[统一链]`、行为与之前一致） |
-| 28 | `P0` | `INTENT-02-CLEANUP-VERIFY-01` 清理后真实验收 | `TODO` | 五类口述连续会话验收 | 全量测试通过且真实功能不减 |
-| 29 | `P1` | Query/Safety/Knowledge 三组合同与 Fake | `TODO` | 独立类型和协议，不接 main | **清理后第一批** |
-| 30 | `P1` | QUERY 第四分支与只读分派 | `TODO` | unified 识别 QUERY，路由到知识查询边界 | 不接真实设备服务或 RAG |
-| 31 | `P2` | 安全、RAG、查询真实接入与 E2E | `TODO` | 见第 I.2 节 | PRESENT 与团队服务合同稳定后 |
-| 32 | `P1` | `INTENT-02-REVIEW-OUTPUT-01` 统一链 review 查看结果输出 | `TODO` | 新链识别到 review 动作时显示待确认列表或"没有待确认问题" | 真实会话 20260814_095506 暴露：ASR 误识别"看待确认问题"被统一链接住后只显示"第 N 段已保存"，无查看结果；`ClarificationExecutor` 的 REVIEW 分支只返回"只读动作"不携带列表；旧门卫的 `display_clarification_command_result` 只服务解析器精确匹配的说法；建议与 `INTENT-02-CLEANUP-COMMAND-01` 同步处理（删旧门卫时把查看显示职责搬进新链） |
-| 33 | `P1` | `INTENT-02-ASR-ROBUSTNESS-01` ASR 误识别鲁棒性评测 | `REAL_OK` | 固定"噪声转写"集（真实误识别样例+同音变体）→ 统一链意图路由对照报告 | **提前执行（2026-08-14，用户直接要求，不改变 NAMING-01 的 P0 顺序）**。新增 `evaluation/narration_robustness/narration_plan.json`（28 段连贯实验口述：正常/缺失字段/无编号回答/错编号/双回答/只有编号/ASR误识别-控制/ASR误识别-实体/误识别+缺失双重/暂缓/否定修正/大小写变体容忍/上下文依赖/异常观察/测量/语义弃权/结束，每段带 spoken/observed 双文本与期望标注）+ `src/evaluation/narration_robustness_plan.py` 严格 schema + `tests/test_narration_robustness_plan.py` 21 项（schema 拒绝坏数据；13 实验段零控制误触发；"看待确认问题"依赖 LLM 容错、"还有什么问题"精确命中、"问题5。"缺答案→no_action、双回答已知限制文档化等）。确定性报告：零误触发 13/依赖LLM 7/精确命中 5/已知限制 3。真实 DeepSeek 旁路 `scripts/evaluate_narration_robustness.py --mode real`（只读）：**21/28 一致、7 缺口**，登记新任务 ASR-ROBUSTNESS-RULE-GAPS-01；全量 454 项通过 |
-| 34 | `P1` | `UNIFIED-PROMPT-ASR-ERROR-CONFIRM-01` 统一Prompt补疑似ASR错词确认规则 | `REAL_OK` | 实体疑似同音错词/识别错误时 needs_confirmation=true + confirmation_reason + 确认追问 | 统一提示词实验规则新增"实体疑似同音错词或ASR识别错误时设置needs_confirmation"；合同测试断言；全量 433 项通过。真实会话 `20260814_110116` 段 11："使用一夜枪取50微升缓冲液" → 事件 `needs_confirmation=True, reason="疑似ASR识别错误：'一夜枪'可能应为'移液枪'"` + 确认问题"您说的'一夜枪'是指移液枪吗？"；段 12"问题三，是的，是一夜枪。" → confirm 执行 → **确认记录首次真实落盘**（experiment_confirmations.jsonl 第 1 行） |
-| 35 | `P1` | `INTENT-02-ANSWER-UX-01` 回答体验：反馈补缺 + 无编号回答识别 | `REAL_OK` | ①answer 部分完成后明确提示"仍缺字段"；②仅一个待确认问题时无编号事实性短句判为对该问题的回答（多个时不得自动归属） | ①执行器 reason 含"仍需补充"（会话 110116 验证）；②无编号回答纯函数兜底 `src/core/answer_fallback.py`（单问题+短句+提取字段⊆缺失字段；夹带无关字段的实验记录绝不路由成回答）+ 提示词收紧 + 合同测试；467 项通过。真实会话 `20260814_113237` 验证：段 3"时间为10分钟"→ abstention 被兜底接住为 answer，反馈"已将对问题 1 的答复的实体字段 ['duration'] 填入。仍需补充：temperature"；段 4"60摄氏度"→ 补 temperature"问题已解决"；段 2"分中"听岔碎片不误判；无编号回答不产生实验事件（事件仅段 1）；计数"提交 1 段"、上下文 1、无剩余确认项 |
-| 36 | `P1` | `INTENT-02-QUESTION-AUTO-OUTPUT-01` 追问/回答结果自动输出 | `REAL_OK` | create 后自动显示追问文本；answer 后自动显示"已填 X 仍缺 Y"；不依赖用户手动"查看待确认问题" | ①执行器 create reason 含问题文本；②`display_shadow_observation` executed 时显示 reason；真实会话 `20260814_110116`：段 1/5/11 create 后直接显示"已创建待确认问题 N：…"、段 10 answer 完整反馈、段 12 confirm 反馈——均自动输出，无需手动查看 |
-| 37 | `P1` | `ASR-ROBUSTNESS-RULE-GAPS-01` 鲁棒性旁路缺口修复 | `TODO` | 真实旁路报告 7 个缺口逐项定案：规则/提示词/确定性兜底 | 来源：`INTENT-02-ASR-ROBUSTNESS-01` 真实旁路（deepseek-v4-flash，21/28 一致）。7 缺口：①段3"加热到60摄氏度"当新实验事件（应回答）②段7/14 同音错词（一夜枪/微生、立心机/离新）→uncertain 弃权未触发确认（110116 曾触发，行为不稳定）③段17 "PH"大小写变体过度确认④段18"不对，应该是7.4"被 LLM 判为 targeted_answer（精确解析为 deny，两路不一致）⑤段20"再加50毫升"、段25"电流显示80毫安"在有待确认问题时被过度判为回答（提示词"事实性短句优先判为回答"泛化过头，与问题无关的实验事实也被归为回答）。建议：提示词加"回答须与问题内容相关"约束 + planner 侧确定性兜底权衡（单问题+短事实句） |
-| 38 | `P1` | `ASR-ROBUSTNESS-RULE-GAPS-02` 鲁棒性复验补充观察（112047/112445，等用户确认后再定案） | `TODO` | 5 项补充观察逐项定案：确认/显示/DEFER/自然结束语/半路弃权 | 用户 2026-08-14 指示"先不改代码、只记录、等确认"。复验原始输出已存档。新发现：A. 112047 段18"问题一先跳过"被 LLM 判为 answer（"未提取到实体字段"）而非 DEFER——跳过意图漏识别；B. 112047 段20"暂缓问题一"→abstention，明确 DEFER 也未接住；C. 112445 段2"不对，应该是7.4"→no_action，否定+修正未接住（对应 CLARIFY-07 已知 TODO）；D. 112445 段14/15 自然结束语"今天先记录到这里吧"→观察失败 ValueError（旁路不支持 end_session 目标，已知限制范围内）；E. 112047 段13 显示 bug：answer 后 missing_fields 已空但确认未完成时输出"仍需补充：空"（应区分"仍需补充字段"与"仍需确认"）；F. 112445 段4"再加50毫升"→abstention（实验事实既未吞成回答也未记成实验，缺口⑤补注）。另：112047 段9"一夜枪"未触发确认（缺口②行为不稳定再次复现）。**注意：兜底代码提交（2bb092a）晚于本次复验运行，段3"60摄氏度"→abstention 不能判定兜底成败；兜底需提交后新会话复验** |
+| 28 | `P1` | `INTENT-02-REVIEW-OUTPUT-01` 统一链 review 查看结果输出 | `REAL_OK` | 新链识别到 review 动作时显示待确认列表或"没有待确认问题" | **随 `INTENT-02-CLEANUP-COMMAND-01` 实现并验证**（`display_review_result` 搬进新链；会话 104104 多次显示"当前没有待确认问题"/"当前共有 N 个待确认问题"） |
+| 29 | `P1` | `INTENT-02-ASR-ROBUSTNESS-01` ASR 误识别鲁棒性评测 | `REAL_OK` | 固定"噪声转写"集（真实误识别样例+同音变体）→ 统一链意图路由对照报告 | **提前执行（2026-08-14，用户直接要求，不改变 NAMING-01 的 P0 顺序）**。新增 `evaluation/narration_robustness/narration_plan.json`（28 段连贯实验口述：正常/缺失字段/无编号回答/错编号/双回答/只有编号/ASR误识别-控制/ASR误识别-实体/误识别+缺失双重/暂缓/否定修正/大小写变体容忍/上下文依赖/异常观察/测量/语义弃权/结束，每段带 spoken/observed 双文本与期望标注）+ `src/evaluation/narration_robustness_plan.py` 严格 schema + `tests/test_narration_robustness_plan.py` 21 项（schema 拒绝坏数据；13 实验段零控制误触发；"看待确认问题"依赖 LLM 容错、"还有什么问题"精确命中、"问题5。"缺答案→no_action、双回答已知限制文档化等）。确定性报告：零误触发 13/依赖LLM 7/精确命中 5/已知限制 3。真实 DeepSeek 旁路 `scripts/evaluate_narration_robustness.py --mode real`（只读）：**21/28 一致、7 缺口**，登记新任务 ASR-ROBUSTNESS-RULE-GAPS-01；全量 454 项通过 |
+| 30 | `P1` | `UNIFIED-PROMPT-ASR-ERROR-CONFIRM-01` 统一Prompt补疑似ASR错词确认规则 | `REAL_OK` | 实体疑似同音错词/识别错误时 needs_confirmation=true + confirmation_reason + 确认追问 | 统一提示词实验规则新增"实体疑似同音错词或ASR识别错误时设置needs_confirmation"；合同测试断言；全量 433 项通过。真实会话 `20260814_110116` 段 11："使用一夜枪取50微升缓冲液" → 事件 `needs_confirmation=True, reason="疑似ASR识别错误：'一夜枪'可能应为'移液枪'"` + 确认问题"您说的'一夜枪'是指移液枪吗？"；段 12"问题三，是的，是一夜枪。" → confirm 执行 → **确认记录首次真实落盘**（experiment_confirmations.jsonl 第 1 行） |
+| 31 | `P1` | `INTENT-02-ANSWER-UX-01` 回答体验：反馈补缺 + 无编号回答识别 | `REAL_OK` | ①answer 部分完成后明确提示"仍缺字段"；②仅一个待确认问题时无编号事实性短句判为对该问题的回答（多个时不得自动归属） | ①执行器 reason 含"仍需补充"（会话 110116 验证）；②无编号回答纯函数兜底 `src/core/answer_fallback.py`（单问题+短句+提取字段⊆缺失字段；夹带无关字段的实验记录绝不路由成回答）+ 提示词收紧 + 合同测试；467 项通过。真实会话 `20260814_113237` 验证：段 3"时间为10分钟"→ abstention 被兜底接住为 answer，反馈"已将对问题 1 的答复的实体字段 ['duration'] 填入。仍需补充：temperature"；段 4"60摄氏度"→ 补 temperature"问题已解决"；段 2"分中"听岔碎片不误判；无编号回答不产生实验事件（事件仅段 1）；计数"提交 1 段"、上下文 1、无剩余确认项 |
+| 32 | `P1` | `INTENT-02-QUESTION-AUTO-OUTPUT-01` 追问/回答结果自动输出 | `REAL_OK` | create 后自动显示追问文本；answer 后自动显示"已填 X 仍缺 Y"；不依赖用户手动"查看待确认问题" | ①执行器 create reason 含问题文本；②`display_shadow_observation` executed 时显示 reason；真实会话 `20260814_110116`：段 1/5/11 create 后直接显示"已创建待确认问题 N：…"、段 10 answer 完整反馈、段 12 confirm 反馈——均自动输出，无需手动查看 |
 
 ### 当前路线为什么这样排
 
@@ -806,6 +818,7 @@ Word/PDF 属于表现层增强，可以在系统 TTS 之后完成。
 | 2026-08-14 | 兜底真实复验升级 35 REAL_OK | 467 项通过 | 会话 20260814_113237（4 段）：段 3"时间为10分钟"→ abstention 被兜底接住为 answer（"已填 ['duration'] 仍需补充：temperature"）；段 4"60摄氏度"→"问题已解决"；段 2"分中"听岔碎片不误判；事件仅段 1（回答不产生实验事件）；计数"提交 1 段"、上下文 1、无剩余确认项（ASR 176 条 +4、事件 63 条 +1） | `INTENT-02-CLEANUP-NAMING-01` 改名（或用户定夺 GAPS-02 各项） |
 | 2026-08-14 | 完成显示一致性修复（用户指示"现在修"） | Python3.11 全量 468 项通过（+1 仍需确认测试） | ①兜底命中时 observation 的显示字段跟随实际动作（answer/clarification_context），不再出现"待确认动作=no_action 却已执行 answer"矛盾；②`_execute_answer` 的 resolved_note：字段补齐但确认未完成时输出"仍需确认"而非"仍需补充：空"；新增 AnswerConfirmationPendingTests；未动麦克风/LLM | 显示一致性真实复验（短会话）→ GAPS-02 项 E 结案 |
 | 2026-08-14 | 显示一致性复验通过升级 REAL_OK | 468 项通过 | 会话 20260814_113958（2 段）：段 2"时间为10分钟"→ 兜底接住且显示自洽（"目标=clarification_context，待确认动作=answer；已执行：已将对问题 1 的答复的实体字段 ['duration'] 填入。仍需补充：temperature。"）；计数"提交 1 段"、上下文 1、剩余问题列出（ASR 178 条 +2、事件 64 条 +1） | GAPS-02 项 E 结案 → `INTENT-02-CLEANUP-NAMING-01` 改名（或用户定夺 GAPS-01/02 其余项） |
+| 2026-08-14 | 用户逐项决策 GAPS-01/02 并确认行动计划（仅记录，未改代码） | 未改代码 | 决策：①接受当实验+加回答编号提示（`GAPS-FIX-ANSWER-HINT-01`）；②转 ASR 层；③PHG 再测；④否定修正不做（当实验记录）；⑤再测（旁路复验）；A/B 修（`GAPS-FIX-DEFER-01` defer_targeted）；C 纠正定性（非 deny）；D 方案二固定结束语（`GAPS-FIX-END-01`，方案一留后）；E 已修再测；F 不管；复验安排（`GAPS-REVERIFY-01`） | 用户确认后实施 |
 | 2026-08-14 | 完成 INTENT-02-CLEANUP-NAMING-01 去影子命名（AUTO_OK） | Python3.11 全量 468 项通过 | 机械改名：observer/observation/display/request_id/显示前缀/docstring 全部去 shadow（改名清单见看板行 27）；`tests/test_unified_shadow.py` 重命名 `test_unified_observer.py`；src/tests 零 shadow 残留；未动麦克风/LLM | 轻量真实会话不退化复验（显示前缀 [统一链]）→ `INTENT-02-CLEANUP-VERIFY-01` |
 | 2026-08-14 | A+B 真实验收升级 REAL_OK（34/35/36） | 433 项通过 | 会话 20260814_110116（13 段）：create 追问文本自动显示（段1/5/11）、answer 完整反馈（段10"问题已解决"）、confirm 反馈（段12）；错词确认生效（段11"一夜枪"→needs_confirmation=True"疑似ASR识别错误：'一夜枪'可能应为'移液枪'"→确认问题→段12"是的"→confirm）→ **确认记录首次真实落盘**；无编号回答段2"时间为10分钟"→abstention（安全未误判但未接住，部分达成）；计数"提交 4 段"、上下文 4 = 事件数（ASR 138 条 +13、事件 62 条 +4） | `INTENT-02-CLEANUP-NAMING-01` 改名 → VERIFY-01 |
 | 2026-08-14 | 用户要求提前执行 ASR 鲁棒性评测（INTENT-02-ASR-ROBUSTNESS-01 REAL_OK，只建评测体系与记录问题，不改代码） | Python3.11 全量 454 项通过（+21 语料测试） | 新增 28 段噪声口述语料 + 严格 schema + 21 项确定性断言（13 实验段零误触发；"看待确认问题"依赖 LLM 容错；"还有什么问题"精确命中；双回答/错编号/只有编号已知限制文档化）；确定性报告 零误触发13/依赖LLM 7/精确命中 5/已知限制 3；**真实 DeepSeek 旁路 21/28 一致、7 缺口**（只读，未写业务数据）；用户明确指示：**先不改代码，缺口记录待定案** | 登记 `ASR-ROBUSTNESS-RULE-GAPS-01`（7 缺口）→ 按用户决定与 NAMING-01 顺序推进 |
