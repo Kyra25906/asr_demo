@@ -41,9 +41,9 @@ from src.core.session_context import (
     SessionContext,
 )
 from src.core.unified_acceptance_bypass import UnifiedAcceptanceBypass
-from src.core.unified_shadow import (
-    ShadowObservationStatus,
-    UnifiedShadowObserver,
+from src.core.unified_observer import (
+    UnifiedObservationStatus,
+    UnifiedObserver,
 )
 from src.core.retry import (
     next_backoff_delay,
@@ -94,20 +94,20 @@ def is_end_session_command(
     command = InteractionCommandParser.parse(text)
     return command.command_type == InteractionCommandType.END_SESSION
 
-def create_unified_shadow_observer() -> UnifiedShadowObserver:
+def create_unified_observer() -> UnifiedObserver:
     """创建统一理解链观察器；统一链是唯一默认路径。"""
 
     print("统一理解链已启用（唯一默认路径）。")
     processor = UnifiedUnderstandingProcessor(create_llm_client())
     router = UnifiedUnderstandingRouter(processor)
-    return UnifiedShadowObserver(UnifiedAcceptanceBypass(router))
+    return UnifiedObserver(UnifiedAcceptanceBypass(router))
 
-def display_shadow_observation(observation) -> None:
+def display_observation(observation) -> None:
     """只显示脱敏摘要，不显示口述或外部错误详情。"""
 
-    if observation.status == ShadowObservationStatus.FAILED:
+    if observation.status == UnifiedObservationStatus.FAILED:
         print(
-            f"[新系统影子] 第{observation.segment_id}段观察失败："
+            f"[统一链] 第{observation.segment_id}段观察失败："
             f"{observation.error_type}；旧流程继续。"
         )
         return
@@ -128,7 +128,7 @@ def display_shadow_observation(observation) -> None:
         exec_note = "；未执行。"
 
     print(
-        f"[新系统影子] 第{observation.segment_id}段："
+        f"[统一链] 第{observation.segment_id}段："
         f"目标={observation.destination}，"
         f"权限={observation.permission}，"
         f"采用={observation.acceptance_kind or 'none'}，"
@@ -253,7 +253,7 @@ def run_experiment_session(
     event_store: ExperimentEventStore,
     confirmation_store: ConfirmationStore,
     state_manager: StateManager,
-    shadow_observer: UnifiedShadowObserver,
+    observer: UnifiedObserver,
 ) -> None:
     """
     运行一次完整实验会话。
@@ -293,7 +293,7 @@ def run_experiment_session(
         ClarificationExecutor
     )
     extractor = AnswerEntityExtractor(create_llm_client())
-    shadow_executor = ClarificationExecutor(
+    executor = ClarificationExecutor(
         reply_coordinator,
         entity_extractor=extractor
     )
@@ -373,8 +373,8 @@ def run_experiment_session(
             recent_context = (
                 session_context.as_prompt_context()
             )
-            observation = shadow_observer.observe(
-                request_id=f"shadow-{session_id}-{segment_id}",
+            observation = observer.observe(
+                request_id=f"unified-{session_id}-{segment_id}",
                 session_id=session_id,
                 segment_id=segment_id,
                 asr_result=asr_result,
@@ -449,7 +449,7 @@ def run_experiment_session(
             if (
                 observation.clarification_action == "no_action"
                 and observation.status
-                == ShadowObservationStatus.OBSERVED
+                == UnifiedObservationStatus.OBSERVED
             ):
                 unresolved = (
                     reply_coordinator
@@ -470,7 +470,7 @@ def run_experiment_session(
                         permission="forward_context_candidate",
                         pending_action=ClarificationAction(
                             request_id=(
-                                f"shadow-{session_id}-{segment_id}"
+                                f"unified-{session_id}-{segment_id}"
                             ),
                             session_id=session_id,
                             segment_id=segment_id,
@@ -505,7 +505,7 @@ def run_experiment_session(
             executed_action_type = None
             if observation.pending_action is not None:
                 try:
-                    exec_result = shadow_executor.execute(
+                    exec_result = executor.execute(
                         observation.pending_action
                     )
                     executed = exec_result.state_changed
@@ -569,7 +569,7 @@ def run_experiment_session(
             if (
                 observation.clarification_action == "review"
                 and observation.status
-                == ShadowObservationStatus.OBSERVED
+                == UnifiedObservationStatus.OBSERVED
             ):
                 display_review_result(
                     reply_coordinator
@@ -580,7 +580,7 @@ def run_experiment_session(
                 executed=executed,
                 execution_reason=execution_reason,
             )
-            display_shadow_observation(observation)
+            display_observation(observation)
 
             print(
                 f"第 {segment_id} 段"
@@ -680,7 +680,7 @@ def main() -> None:
         ExperimentEventStore()
     )
 
-    shadow_observer = create_unified_shadow_observer()
+    observer = create_unified_observer()
 
     # ASR 模型只在程序启动时
     # 加载一次。
@@ -740,7 +740,7 @@ def main() -> None:
                 state_manager=(
                     state_manager
                 ),
-                shadow_observer=shadow_observer
+                observer=observer
             )
 
         except Exception as error:

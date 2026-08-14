@@ -1,4 +1,4 @@
-"""把统一采用链安全地接到主流程影子观察位。"""
+"""把统一采用链安全地接到主流程观察位。"""
 
 from __future__ import annotations
 
@@ -21,14 +21,14 @@ if TYPE_CHECKING:
     from src.core.experiment_acceptance import AcceptedExperimentAnalysis
 
 
-class ShadowObservationStatus(str, Enum):
+class UnifiedObservationStatus(str, Enum):
     OBSERVED = "observed"
     FAILED = "failed"
 
 
 @dataclass(frozen=True)
-class ShadowObservation:
-    """不含口述正文或模型原始响应的影子观察摘要。
+class UnifiedObservation:
+    """不含口述正文或模型原始响应的观察摘要。
 
     accepted_analysis 是可选的完整分析快照，
     供主流程在统一链路活跃时直接用于事件落盘，
@@ -38,7 +38,7 @@ class ShadowObservation:
     request_id: str
     session_id: str
     segment_id: int
-    status: ShadowObservationStatus
+    status: UnifiedObservationStatus
     destination: str | None = None
     permission: str | None = None
     acceptance_kind: str | None = None
@@ -54,7 +54,7 @@ class ShadowObservation:
     pending_action: ClarificationAction | None = None
 
     def __post_init__(self) -> None:
-        if self.status == ShadowObservationStatus.OBSERVED:
+        if self.status == UnifiedObservationStatus.OBSERVED:
             if self.destination is None or self.clarification_action is None:
                 raise ValueError("成功观察必须包含目标和澄清动作。")
             if self.error_type is not None:
@@ -76,7 +76,7 @@ class ShadowObservation:
         }
 
 
-class UnifiedShadowObserver:
+class UnifiedObserver:
     """观察统一链路的施工单；配置执行器后可真实修改协调器。"""
 
     def __init__(
@@ -94,7 +94,7 @@ class UnifiedShadowObserver:
         asr_result: ASRResult,
         reply_coordinator: ReplyCoordinator,
         recent_context: tuple[str, ...] = (),
-    ) -> ShadowObservation:
+    ) -> UnifiedObservation:
         try:
             snapshot = ClarificationContextSnapshot(
                 unresolved=reply_coordinator.active_clarifications(),
@@ -127,11 +127,11 @@ class UnifiedShadowObserver:
 
             action = result.clarification_action
 
-            return ShadowObservation(
+            return UnifiedObservation(
                 request_id=request_id,
                 session_id=session_id,
                 segment_id=segment_id,
-                status=ShadowObservationStatus.OBSERVED,
+                status=UnifiedObservationStatus.OBSERVED,
                 destination=plan.destination.value,
                 permission=plan.permission.value,
                 acceptance_kind=(accepted.kind.value if accepted else None),
@@ -146,10 +146,10 @@ class UnifiedShadowObserver:
                 pending_action=action,
             )
         except Exception as error:
-            return ShadowObservation(
+            return UnifiedObservation(
                 request_id=request_id,
                 session_id=session_id,
                 segment_id=segment_id,
-                status=ShadowObservationStatus.FAILED,
+                status=UnifiedObservationStatus.FAILED,
                 error_type=type(error).__name__,
             )
