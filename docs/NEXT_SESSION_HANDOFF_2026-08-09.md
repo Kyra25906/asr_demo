@@ -10,20 +10,21 @@
 
 - 正式解释器：Python 3.11.9，项目 `.venv` 可用。
 - 核心依赖和 `src.main` 导入成功；冷启动约 113 秒。
-- 全量自动测试：`Ran 443 tests in 1.080s — OK`。
+- 全量自动测试：`Ran 438 tests in 1.358s — OK`。
 - `MAIN-SESSION-CONTEXT-01` 统一链路上下文：**REAL_OK**（会话 `20260814_092200`）。
-- `MAIN-RUNTIME-HARDEN-01` 运行边界整理：**REAL_OK**（会话 `20260814_093515`：3 段口述"提交 2 段实验口述"，控制命令不占计数）。
-- 最近真实会话：`20260814_093515`。
-- 统一链已接管主要处理，但 main 仍保留 shadow flag、旧 submit 回退和旧命令门卫。
+- `MAIN-RUNTIME-HARDEN-01` 运行边界整理：**REAL_OK**（会话 `20260814_093515`）。
+- `INTENT-02-CLEANUP-FLAGS-01` 去标志位：**REAL_OK**（会话 `20260814_095506` 不退化复验通过；两个 shadow flag 已删，新链唯一默认路径）。
+- 最近真实会话：`20260814_095506`。
+- main 仍保留旧 submit 回退代码（已不可达）和旧命令门卫，等待后续清理。
 - 工作区存在用户累计未提交修改；不得覆盖、回退或混入无关变更。
 
 ## 2. 当前唯一下一项
 
-`INTENT-02-CLEANUP-FLAGS-01`：去标志位。
+`INTENT-02-CLEANUP-SUBMIT-01`：删旧 submit 相关残留。
 
-删除 `UNIFIED_SHADOW_ENABLED` / `UNIFIED_SHADOW_EXECUTE_ENABLED` 两个 shadow flag，
-新统一链成为唯一默认路径（先删 flag 让新链默认走，再删旧 submit 回退和旧命令门卫）。
-前提：main 三项一致性修复（上下文/计数/退避）均已 REAL_OK，可安全执行。
+1. 删除 `display_completed_segments` 的 `skip_ingest` 参数与"跳过旧 ingest"补丁（统一链已接管，恒为跳过）；
+2. 删除 main 中不再使用的旧链路组件（`SegmentProcessor` 的 LLM 路径、`SessionProcessingQueue.submit` 等）——注意 `segment_processor.event_store` 仍被统一链用于事件落盘，剥离时保持该引用；
+3. 完成后 `src.main` 中旧 SegmentProcessor LLM 路径从 main 消失。
 
 真实会话核验工具：`.\.venv\Scripts\python.exe -B -m scripts.verify_session_context <session_id>`（输出 ASR 段数、事件数、预期上下文计数）。
 
@@ -45,7 +46,7 @@ MAIN-SESSION-CONTEXT-01（REAL_OK）
 
 | 优先级 | 风险 | 期望修复 |
 |---|---|---|
-| `P0` | execute flag 可在 observer 未创建时开启 | 配置层拒绝非法组合；清理阶段最终删除双 flag |
+| `P0` | execute flag 可在 observer 未创建时开启 | **已修（2026-08-14）**：两个 shadow flag 已随 CLEANUP-FLAGS-01 删除，配置校验函数一并移除 |
 | `P0` | `ClarificationExecutor` 可能先改协调器，main 后写 ASR | 统一采用 prepare → persist → commit |
 | `P0` | 新链 observe 未传 `recent_context`、事件落盘后未更新 `SessionContext` | **已修（2026-08-14，REAL_OK）**：observe 传 `as_prompt_context()` 快照；事件落盘成功后 `add_analysis`；会话 20260814_092200 复验通过 |
 | `P1` | `experiment_segment_count` 在确认实验分析前加一 | **已修（2026-08-14，REAL_OK）**：`is_experiment_evidence` 判定，只统计实验/降级证据段；会话 20260814_093515 复验通过 |

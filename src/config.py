@@ -108,27 +108,6 @@ def read_bool(variable_name: str, default: str = "false") -> bool:
     )
 
 
-def validate_shadow_flags(*, enabled: bool, execute: bool) -> None:
-    """拒绝非法组合：执行依赖观察器，不能单独开启执行。"""
-
-    if execute and not enabled:
-        raise RuntimeError(
-            "UNIFIED_SHADOW_EXECUTE_ENABLED=true 要求 "
-            "UNIFIED_SHADOW_ENABLED=true；"
-            "执行依赖影子观察器，不能单独开启。"
-        )
-
-
-UNIFIED_SHADOW_ENABLED = read_bool("UNIFIED_SHADOW_ENABLED")
-# 独立开关：影子执行需要额外授权，因为会真实修改 ReplyCoordinator 状态
-UNIFIED_SHADOW_EXECUTE_ENABLED = read_bool("UNIFIED_SHADOW_EXECUTE_ENABLED")
-
-validate_shadow_flags(
-    enabled=UNIFIED_SHADOW_ENABLED,
-    execute=UNIFIED_SHADOW_EXECUTE_ENABLED,
-)
-
-
 # ==================================================
 # 唤醒词配置
 # ==================================================

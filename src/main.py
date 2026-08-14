@@ -14,8 +14,6 @@ from src.audio.vad_recorder import (
 from src.config import (
     SESSION_CONTEXT_MAX_EVENTS,
     SESSION_MAX_PENDING_TASKS,
-    UNIFIED_SHADOW_ENABLED,
-    UNIFIED_SHADOW_EXECUTE_ENABLED,
     WAKEWORD_KEYWORDS_FILE,
     WAKEWORD_MODEL_DIR,
 )
@@ -157,18 +155,12 @@ def create_experiment_llm_processor(
         client=llm_client
     )
 
-def create_unified_shadow_observer() -> UnifiedShadowObserver | None:
-    """按显式配置创建影子链；默认关闭。执行需额外开启 UNIFIED_SHADOW_EXECUTE_ENABLED。"""
+def create_unified_shadow_observer() -> UnifiedShadowObserver:
+    """创建统一理解链观察器；统一链是唯一默认路径。"""
 
-    if not UNIFIED_SHADOW_ENABLED:
-        return None
-
+    print("统一理解链已启用（唯一默认路径）。")
     processor = UnifiedUnderstandingProcessor(create_llm_client())
     router = UnifiedUnderstandingRouter(processor)
-    if UNIFIED_SHADOW_EXECUTE_ENABLED:
-        print("统一合同影子观察已开启；执行已开启，将修改协调器状态。")
-    else:
-        print("统一合同影子观察已开启；结果不会接管旧流程。")
     return UnifiedShadowObserver(UnifiedAcceptanceBypass(router))
 
 def display_shadow_observation(observation) -> None:
@@ -610,25 +602,23 @@ def run_experiment_session(
         ReplyCoordinator()
     )
 
-    # 新链路执行器——只在显式开启且影子观察存在时创建
-    shadow_executor = None
-    if shadow_observer is not None and UNIFIED_SHADOW_EXECUTE_ENABLED:
-        from src.core.clarification_executor import (
-            AnswerEntityExtractor,
-            ClarificationExecutor
-        )
-        extractor = AnswerEntityExtractor(create_llm_client())
-        shadow_executor = ClarificationExecutor(
-            reply_coordinator,
-            entity_extractor=extractor
-        )
+    # 新链路执行器——统一链是唯一路径，始终创建
+    from src.core.clarification_executor import (
+        AnswerEntityExtractor,
+        ClarificationExecutor
+    )
+    extractor = AnswerEntityExtractor(create_llm_client())
+    shadow_executor = ClarificationExecutor(
+        reply_coordinator,
+        entity_extractor=extractor
+    )
 
     def _display(segments):
-        """显示已完成段；新统一链路活跃时跳过旧ingest。"""
+        """显示已完成段；统一链已接管协调器交互，跳过旧ingest。"""
         display_completed_segments(
             segments,
             reply_coordinator=reply_coordinator,
-            skip_ingest=UNIFIED_SHADOW_EXECUTE_ENABLED,
+            skip_ingest=True,
         )
 
     utterance_count = 0
@@ -723,28 +713,24 @@ def run_experiment_session(
                     utterance_count
                 )
 
-                if shadow_observer is not None:
-                    # 调用前的上下文快照只包含此前已成功落盘的事件。
-                    # 当前段尚未加入上下文，避免模型把本轮输入当作历史。
-                    recent_context = (
-                        session_context.as_prompt_context()
-                    )
-                    observation = shadow_observer.observe(
-                        request_id=f"shadow-{session_id}-{segment_id}",
-                        session_id=session_id,
-                        segment_id=segment_id,
-                        asr_result=asr_result,
-                        reply_coordinator=reply_coordinator,
-                        recent_context=recent_context,
-                    )
-                    if not UNIFIED_SHADOW_EXECUTE_ENABLED:
-                        display_shadow_observation(observation)
-                    _new_chain_handled_answer = (
-                        observation.status.value == "observed"
-                        and observation.clarification_action == "answer"
-                    )
-                else:
-                    _new_chain_handled_answer = False
+                # 统一链是唯一路径，观察器始终存在。
+                # 调用前的上下文快照只包含此前已成功落盘的事件。
+                # 当前段尚未加入上下文，避免模型把本轮输入当作历史。
+                recent_context = (
+                    session_context.as_prompt_context()
+                )
+                observation = shadow_observer.observe(
+                    request_id=f"shadow-{session_id}-{segment_id}",
+                    session_id=session_id,
+                    segment_id=segment_id,
+                    asr_result=asr_result,
+                    reply_coordinator=reply_coordinator,
+                    recent_context=recent_context,
+                )
+                _new_chain_handled_answer = (
+                    observation.status.value == "observed"
+                    and observation.clarification_action == "answer"
+                )
 
                 if _new_chain_handled_answer:
                     targeted_answer_request = None
@@ -890,139 +876,95 @@ def run_experiment_session(
 
                 )
 
-                if UNIFIED_SHADOW_EXECUTE_ENABLED:
-                    # 统一链：只统计被采用为实验/降级证据的段。
-                    # 查看、暂缓、弃权、失败观察等不占实验段计数，
-                    # 否则结束时"提交 N 段实验口述"会虚高。
-                    if observation.is_experiment_evidence:
-                        experiment_segment_count += 1
-                    # 统一链路活跃：ASR 由 main 直接落盘，
-                    # 不再通过旧 SegmentProcessor 调 LLM。
-                    # 有实验分析时一并保存事件，
-                    # 非实验段（abstention/查看等）只存 ASR。
+                # 统一链是唯一路径：只统计被采用为实验/降级证据的段。
+                # 查看、暂缓、弃权、失败观察等不占实验段计数，
+                # 否则结束时"提交 N 段实验口述"会虚高。
+                if observation.is_experiment_evidence:
+                    experiment_segment_count += 1
+                # ASR 由 main 直接落盘，不再通过旧 SegmentProcessor 调 LLM。
+                # 有实验分析时一并保存事件，
+                # 非实验段（abstention/查看等）只存 ASR。
+                try:
+                    asr_store.append(
+                        result=asr_result,
+                        session_id=session_id,
+                        segment_id=segment_id,
+                    )
+                except Exception as error:
+                    print(
+                        "\nASR 保存失败："
+                        f"{type(error).__name__}: {error}"
+                    )
+                    print(
+                        "系统将继续监听。\n"
+                    )
+                    continue
+
+                if observation.accepted_analysis is not None:
+                    outcome = (
+                        observation
+                        .accepted_analysis
+                        .to_process_outcome()
+                    )
                     try:
-                        asr_store.append(
-                            result=asr_result,
-                            session_id=session_id,
-                            segment_id=segment_id,
+                        segment_processor.event_store.append_analysis(
+                            outcome
                         )
                     except Exception as error:
                         print(
-                            "\nASR 保存失败："
+                            "\n事件保存失败："
                             f"{type(error).__name__}: {error}"
                         )
                         print(
+                            "ASR 原文已保存，"
                             "系统将继续监听。\n"
                         )
-                        continue
-
-                    if observation.accepted_analysis is not None:
-                        outcome = (
-                            observation
-                            .accepted_analysis
-                            .to_process_outcome()
-                        )
+                    else:
+                        # 事件落盘成功后，才把分析事件加入内存上下文。
+                        # 与旧 SegmentProcessor 第 5 步语义一致：
+                        # 上下文不包含“内存有但文件无”的事件。
                         try:
-                            segment_processor.event_store.append_analysis(
-                                outcome
+                            session_context.add_analysis(
+                                outcome.value
                             )
                         except Exception as error:
                             print(
-                                "\n事件保存失败："
+                                "\n上下文更新失败："
                                 f"{type(error).__name__}: {error}"
                             )
-                            print(
-                                "ASR 原文已保存，"
-                                "系统将继续监听。\n"
-                            )
-                        else:
-                            # 事件落盘成功后，才把分析事件加入内存上下文。
-                            # 与旧 SegmentProcessor 第 5 步语义一致：
-                            # 上下文不包含“内存有但文件无”的事件。
-                            try:
-                                session_context.add_analysis(
-                                    outcome.value
-                                )
-                            except Exception as error:
-                                print(
-                                    "\n上下文更新失败："
-                                    f"{type(error).__name__}: {error}"
-                                )
 
-                    # commit：ASR 与事件证据都落盘成功后，
-                    # 才执行状态变更。
-                    executed = False
-                    execution_reason = None
-                    if observation.pending_action is not None:
-                        try:
-                            exec_result = shadow_executor.execute(
-                                observation.pending_action
-                            )
-                            executed = exec_result.state_changed
-                            execution_reason = exec_result.reason
-                        except Exception:
-                            execution_reason = "执行器内部异常"
-
-                    observation = replace(
-                        observation,
-                        executed=executed,
-                        execution_reason=execution_reason,
-                    )
-                    display_shadow_observation(observation)
-
-                    print(
-                        f"第 {segment_id} 段"
-                        "已保存。"
-                    )
-                    print(
-                        f"当前待处理任务数："
-                        f"{processing_queue.pending_count()}"
-                    )
-                    print(
-                        "系统将立即继续监听。\n"
-                    )
-                else:
-                    # 回退路径：统一链路关闭时，
-                    # 走旧 SegmentProcessor
-                    # （含 LLM 调用）。
-                    # 旧链每段都产出结构化分析或降级 NOTE，
-                    # 因此每段都计入实验段。
-                    experiment_segment_count += 1
-                    completed_during_submit = (
-                        processing_queue.submit(
-                            asr_result=(
-                                asr_result
-                            ),
-                            session_id=session_id,
-                            segment_id=segment_id,
-                            target_clarification_id=(
-                                targeted_answer_request.clarification_id
-                                if targeted_answer_request is not None
-                                else None
-                            ),
-                            confirms_target_suggestion=(
-                                targeted_answer_request.confirms_suggestion
-                                if targeted_answer_request is not None
-                                else False
-                            )
+                # commit：ASR 与事件证据都落盘成功后，
+                # 才执行状态变更。
+                executed = False
+                execution_reason = None
+                if observation.pending_action is not None:
+                    try:
+                        exec_result = shadow_executor.execute(
+                            observation.pending_action
                         )
-                    )
+                        executed = exec_result.state_changed
+                        execution_reason = exec_result.reason
+                    except Exception:
+                        execution_reason = "执行器内部异常"
 
-                    _display(
-                        completed_during_submit
-                    )
+                observation = replace(
+                    observation,
+                    executed=executed,
+                    execution_reason=execution_reason,
+                )
+                display_shadow_observation(observation)
 
-                    print(
-                        f"第 {segment_id} 段"
-                        "已提交后台处理。"
-                    )
-                    print(
-                        f"当前待处理任务数："
-                        f"{processing_queue.pending_count()}"
-                    )
-                    print(
-                        "系统将立即继续监听。\n"
-                    )
+                print(
+                    f"第 {segment_id} 段"
+                    "已保存。"
+                )
+                print(
+                    f"当前待处理任务数："
+                    f"{processing_queue.pending_count()}"
+                )
+                print(
+                    "系统将立即继续监听。\n"
+                )
 
             except TimeoutError:
                 idle_seconds = (

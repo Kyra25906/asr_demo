@@ -314,14 +314,13 @@ VadAudioRecorder:
   │      └─ 真实会话已验证零旧 LLM 重复调用
   │
   └──→ 仍保留的回退代码：SegmentProcessor → SessionProcessingQueue
-         └─ 受旧 flag 控制，待删除，不再作为目标架构
+         └─ 待删除（INTENT-02-CLEANUP-SUBMIT-01），不再作为目标架构
 ```
 
-**两个开关**：
-- `UNIFIED_SHADOW_ENABLED`：是否构建影子观察器（只读运行新链路）
-- `UNIFIED_SHADOW_EXECUTE_ENABLED`：是否让新链路真正写入（替代旧链路）
+**开关状态（2026-08-14）**：`UNIFIED_SHADOW_ENABLED` / `UNIFIED_SHADOW_EXECUTE_ENABLED` 已随
+INTENT-02-CLEANUP-FLAGS-01 删除，统一链是唯一默认路径。
 
-**当前任务**：先修配置不变量、证据提交顺序和 SessionContext 断链，再执行 INTENT-02 五步清理——删除开关、删除旧提交分支、统一命令入口、重命名影子概念、真实验收。
+**当前任务**：继续 INTENT-02 五步清理——删除旧提交分支、统一命令入口、重命名影子概念、真实验收。
 
 ### 5.2 为什么当时采用影子模式
 

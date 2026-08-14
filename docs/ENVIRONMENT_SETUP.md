@@ -37,13 +37,8 @@ C:\Users\dahli\AppData\Local\Programs\Python\Python311\python.exe `
 
 复制 `.env.example` 为 `.env`，再填写本地 API Key。`.env` 已由 `.gitignore` 排除。
 
-统一合同影子模式默认关闭：
-
-```text
-UNIFIED_SHADOW_ENABLED=false
-```
-
-只有在明确允许本次最终 ASR 忠实转写发送给 DeepSeek 后，才可在本机 `.env` 临时改为 `true`。该开关不会上传音频，但会让非精确命令额外调用一次统一理解模型；不得把一次真实测试授权视为长期外发授权。
+统一理解链是唯一默认路径（2026-08-14 起，shadow flag 已删除），非精确命令会调用一次统一理解模型；
+`.env` 中不再需要任何 `UNIFIED_SHADOW_*` 开关。
 
 ## 4. 验证环境
 
