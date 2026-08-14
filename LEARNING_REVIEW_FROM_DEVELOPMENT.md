@@ -2827,6 +2827,19 @@ ASR 保存失败 → `continue`（跳过整段，不继续事件保存）。因�
 - **错误分级设计的双面性**："事件保存失败只警告、不中断"让系统优雅降级（ASR 保住、继续监听、不崩），但也**把系统性故障伪装成了偶发警告**——每段都失败，日志却和偶发失败长得一样。教训：**持续性失败需要更强的可见性**（如连续 N 次失败升级为醒目提示）。记入稳定性任务考虑。
 - **终验（会话 102122）通过**：3 段口述"提交 2 段实验口述"、上下文 2 = 事件数、无事件保存失败、无"当前待处理任务数"。ASR 105 条（+3）、事件 52 条（+2 仅段 1、3）。任务状态 `AUTO_OK → REAL_OK`。下一步 `INTENT-02-CLEANUP-COMMAND-01` 统一命令入口（顺带修 REVIEW-OUTPUT-01 查看显示）。
 
+## 2026-08-14：统一命令入口——撤三道门卫，职责搬进新链（AUTO_OK）
+
+- **改了什么**：主循环删除 `_new_chain_handled_answer` 补丁和三道旧门卫（targeted-answer / clarification / confirmation），统一链成为**唯一命令路径**。每段口述现在只有一条路：observe → 统一落盘（ASR+事件）→ executor 执行 → 显示。
+- **搬进新链的三件职责**：
+  1. **review 显示（REVIEW-OUTPUT-01 修复）**：新增 `display_review_result`，review 动作执行后显示"当前没有待确认问题。"或待确认列表——你发现的那个"接了活没交差"缺口补上了；
+  2. **确认记录持久化**：confirm 动作执行成功后写 `ConfirmationRecord`（新增 `from_executed_confirmation` 工厂，不再依赖旧 prepare 流程）+ `ReplyCoordinator.find_clarification` 公开接口（原来只有私有 `_find_clarification`，main 要读澄清信息，暴露一个只读公开接口）；
+  3. **执行反馈**：executor 结果的 reason（"已创建问题 N"等）经观察摘要显示。
+- **知识点：职责搬家要"先列清单、逐件搬、搬完再拆"**。撤门卫前先盘点每道门卫做了什么事（显示？持久化？引导话术？），确认新链有对应承接，否则删了就是丢功能。这次盘点发现 confirmation 门卫写确认记录而新链不写——差点丢持久化。
+- **知识点：公开接口 vs 私有接口**。main 需要"按 id 查澄清对象"，但 ReplyCoordinator 只有私有 `_find_clarification`。选择加一个一行委托的公开 `find_clarification`——**main 是外部消费者，不该扒私有的**；私有方法只该被同模块内部调用。
+- **知识点：删测试与被删功能绑定**。`test_confirmation_main.py` import 了被删的 `try_handle_confirmation_answer`，连带删除（−4），新工厂补 3 项测试（433 → 432）。
+- **孤儿模块决策**：`clarification_command_handler.py`、`targeted_clarification.py` main 已不调用，但模块级测试仍在——按用户决定这轮不删，留到 VERIFY 前集中处理（删除孤儿模块 + 其测试是独立决策，避免本轮改动面过大）。
+- **测试基线**：432 项通过。待真实会话验收（查看显示/追问/确认记录/结束六步脚本）。
+
 ## 2026-08-14：用户提问暴露的功能缺口——"接了活但没交差"的 review 显示
 
 - **现象（用户发现的）**：会话 095506 中，第 2/4 段"看待确认问题"（ASR 把"查看"听成"看待"）被统一链正确理解为 review，但只显示"第 2 段已保存"，**没有输出"当前没有待确认问题"**；而第 6 段"还有什么问题？"走了旧门卫，正常显示。

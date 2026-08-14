@@ -331,6 +331,26 @@ INTENT-02-CLEANUP-FLAGS-01 删除，统一链是唯一默认路径。
 
 影子模式已经完成验证使命，不应继续承载新功能。查询、安全和 RAG 必须接入清理后的单一路径。
 
+### 5.3 双轨清理职责迁移对照表（2026-08-14 起逐轮更新）
+
+> 每个清理轮删除旧路组件时，必须在此登记：**旧路做了什么 → 新路如何获得该功能**。
+> 避免"代码删了、能力也丢了"，也帮助后来者理解删除理由。
+
+| 清理轮 | 被删的旧路组件 | 旧路原来做什么 | 新路如何获得该功能 |
+|---|---|---|---|
+| FLAGS-01 | `UNIFIED_SHADOW_ENABLED` / `UNIFIED_SHADOW_EXECUTE_ENABLED` + `validate_shadow_flags` | 开关切换新旧链路（观察/执行两档） | 新链是唯一默认路径，不需要开关；配置校验函数随开关一起退役 |
+| SUBMIT-01 | `create_experiment_llm_processor`（旧 ExperimentLLMProcessor） | 旧链调 LLM 做实验结构化 | 统一链 `UnifiedUnderstandingProcessor` 一次调用完成理解+结构化 |
+| SUBMIT-01 | `SegmentProcessor.process` / `SessionProcessingQueue.submit` | 旧链五步：ASR保存→LLM→事件保存→上下文更新（后台线程） | main 直接编排：ASR 落盘 → `event_store` 落盘 → `session_context.add_analysis`（prepare→persist→commit，主线程） |
+| SUBMIT-01 | `display_completed_segment(s)` / `display_segment_result` / `display_coordinated_reply` + `skip_ingest` 补丁 | 旧链显示后台完成结果并 ingest 进 ReplyCoordinator | `display_shadow_observation` 显示观察摘要；协调器交互由 `ClarificationExecutor` 负责 |
+| SUBMIT-01 | 外层 `try/finally` 队列收尾 | 会话结束等待后台任务完成 | 无后台任务，无需等待 |
+| COMMAND-01 | `resolve_targeted_answer` 门卫（"问题 N，答案"） | 精确解析编号答复并路由 | 统一链 LLM 识别 answer 动作 + `AnswerEntityExtractor` 提实体 + executor 执行 |
+| COMMAND-01 | `try_handle_clarification_command` 门卫（查看/暂缓） | 精确命令处理+结果展示 | 统一链 review/defer 动作 + executor；查看显示由 `display_review_result` 承接（REVIEW-OUTPUT-01） |
+| COMMAND-01 | `try_handle_confirmation_answer` 门卫（"是的"） | prepare→写 ConfirmationRecord→commit | 统一链 confirm 动作 + executor；main 在状态变更成功后写 ConfirmationRecord（`from_executed_confirmation` 工厂） |
+| COMMAND-01 | `display_clarification_command_result` / `display_confirmation_resolution` | 命令结果话术 | `display_review_result` + 观察摘要中的 execution_reason |
+| COMMAND-01 | `_new_chain_handled_answer` 补丁 | 防止新旧两条路重复处理 answer | 补丁本身是双轨产物；统一为单一路径后不需要 |
+| NAMING-01（待） | `shadow` 命名（observer/observation/显示） | —（纯命名） | 改为正式执行链命名，不改变行为 |
+| VERIFY-01（待） | 孤儿模块 `clarification_command_handler.py`、`targeted_clarification.py` | 已不被 main 调用 | 删除前确认其测试覆盖已由新链测试承接，再删模块+测试 |
+
 ---
 
 ## 六、设计模式总结

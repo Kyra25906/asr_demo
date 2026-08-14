@@ -55,6 +55,57 @@ class ConfirmationRecordTests(unittest.TestCase):
             )
 
 
+class FromExecutedConfirmationTests(unittest.TestCase):
+    def test_builds_confirmed_record_with_execution_fields(self):
+        record = ConfirmationRecord.from_executed_confirmation(
+            session_id="session_002",
+            clarification_id="segment-9",
+            source_segment_id=9,
+            answer_segment_id=10,
+            answer_raw_text="是的，是水浴。",
+            answer_audio_path="audio/answer_10.wav",
+            fully_resolved=True,
+            remaining_fields=(),
+        )
+
+        self.assertEqual(record.decision, ConfirmationDecision.CONFIRMED)
+        self.assertEqual(record.clarification_id, "segment-9")
+        self.assertEqual(record.source_segment_id, 9)
+        self.assertEqual(record.answer_segment_id, 10)
+        self.assertEqual(
+            record.record_id,
+            "session_002:confirmation:10:segment-9",
+        )
+
+    def test_partial_confirmation_keeps_remaining_fields(self):
+        record = ConfirmationRecord.from_executed_confirmation(
+            session_id="session_002",
+            clarification_id="segment-11",
+            source_segment_id=11,
+            answer_segment_id=12,
+            answer_raw_text="是的。",
+            answer_audio_path="audio/answer_12.wav",
+            fully_resolved=False,
+            remaining_fields=("duration",),
+        )
+
+        self.assertFalse(record.fully_resolved)
+        self.assertEqual(record.remaining_fields, ("duration",))
+
+    def test_rejects_answer_in_source_segment_or_earlier(self):
+        with self.assertRaisesRegex(ValueError, "answer_segment_id"):
+            ConfirmationRecord.from_executed_confirmation(
+                session_id="s",
+                clarification_id="segment-1",
+                source_segment_id=1,
+                answer_segment_id=1,
+                answer_raw_text="是的。",
+                answer_audio_path="audio/a.wav",
+                fully_resolved=True,
+                remaining_fields=(),
+            )
+
+
 class ConfirmationStoreTests(unittest.TestCase):
     def test_appends_utf8_jsonl_record(self):
         with tempfile.TemporaryDirectory() as directory:

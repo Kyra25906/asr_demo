@@ -1,6 +1,6 @@
 # asr_demo 项目任务清单
 
-最后更新：2026-08-14（INTENT-02-CLEANUP-SUBMIT-01 去旧 submit 残留 REAL_OK）
+最后更新：2026-08-14（INTENT-02-CLEANUP-COMMAND-01 统一命令入口 REAL_OK）
 
 > 本文件是当前任务、优先级和验收状态的唯一来源。架构说明、环境命令和下一会话摘要
 > 分别见 `PROJECT_ARCHITECTURE.md`、`ENVIRONMENT_SETUP.md` 和
@@ -45,10 +45,10 @@ TODO → DESIGN → CODED → AUTO_OK → REAL_OK
 
 ## 2. 当前测试基线
 
-- 当前全量自动测试：`433 tests OK`（Python 3.11.9，2026-08-14）
+- 当前全量自动测试：`432 tests OK`（Python 3.11.9，2026-08-14）
 - 环境验证：核心依赖和 `src.main` 导入成功；首次沙箱内失败已确认是执行权限误判，不是 `.venv` 损坏
-- 最近真实连续口述会话：`20260814_102122`
-- 最近真实会话已验证：SUBMIT-01 不退化——3 段口述"提交 2 段实验口述"，上下文 2 = 事件数，无"事件保存失败"、无"当前待处理任务数"；首轮复验曾抓出重构 Bug（NameError: event_store 未传入 run_experiment_session，事件全丢、上下文 0），补传参后修复并复验通过
+- 最近真实连续口述会话：`20260814_104104`
+- 最近真实会话已验证：统一命令入口闭环——20 段口述：查看显示多次生效（"当前没有待确认问题"/"当前共有 N 个待确认问题"），create 追问 3 次、answer 指定回答 3 次解决问题 1/2、计数"提交 6 段实验口述"、上下文 6 = 事件数、结束正常、剩余问题正确列出；确认记录真实路径未触发（无 needs_confirmation 场景，留待 VERIFY-01 补）
 
 恢复工作时先运行：
 
@@ -62,7 +62,7 @@ cd C:\Users\dahli\Desktop\asr_demo
 
 ## 3. 当前唯一下一项
 
-> `MAIN-EVIDENCE-COMMIT-01` AUTO_OK。`MAIN-SESSION-CONTEXT-01` REAL_OK。`MAIN-RUNTIME-HARDEN-01` REAL_OK。`INTENT-02-CLEANUP-FLAGS-01` REAL_OK。`INTENT-02-CLEANUP-SUBMIT-01` REAL_OK。当前唯一下一项为 `INTENT-02-CLEANUP-COMMAND-01`：统一命令入口。
+> `MAIN-EVIDENCE-COMMIT-01` AUTO_OK。`MAIN-SESSION-CONTEXT-01` REAL_OK。`MAIN-RUNTIME-HARDEN-01` REAL_OK。`INTENT-02-CLEANUP-FLAGS-01` REAL_OK。`INTENT-02-CLEANUP-SUBMIT-01` REAL_OK。`INTENT-02-CLEANUP-COMMAND-01` REAL_OK。当前唯一下一项为 `INTENT-02-CLEANUP-NAMING-01`：去影子命名。
 
 当前 P0 顺序：
 
@@ -71,7 +71,9 @@ MAIN-SESSION-CONTEXT-01 REAL_OK
 → MAIN-RUNTIME-HARDEN-01 REAL_OK
 → INTENT-02-CLEANUP-FLAGS-01 REAL_OK
 → INTENT-02-CLEANUP-SUBMIT-01 REAL_OK
-→ INTENT-02-CLEANUP-COMMAND-01
+→ INTENT-02-CLEANUP-COMMAND-01 REAL_OK
+→ INTENT-02-CLEANUP-NAMING-01
+→ INTENT-02-CLEANUP-VERIFY-01
 ```
 
 ### 为什么要先清债再盖楼
@@ -125,7 +127,7 @@ QUERY-TYPES-01 + SAFETY-TYPES-01 + KNOWLEDGE-PROTOCOLS-01 （并行，纯类型�
 | 23 | `P1` | `MAIN-RUNTIME-HARDEN-01` 运行边界整理 | `REAL_OK` | 修正实验段计数、持续唤醒错误退避、删除重复空字段分支 | ① `ShadowObservation` 新增 `is_experiment_evidence` 属性，main 统一链只统计实验/降级证据段（查看/暂缓/弃权不占计数）；② 新建 `src/core/retry.py` 纯函数 `next_backoff_delay`（1→2→4→8→10s 封顶），main 唤醒循环失败退避、成功重置、Ctrl+C 不受影响；③ 删除 `ClarificationExecutor` 重复 `if not supplied_fields` 死分支；新增 retry 5 项 + evidence 3 项测试，全量 443 项通过。真实会话 `20260814_093515`：3 段口述（实验/查看/实验），结束打印"提交 2 段实验口述"，控制命令不占计数；事件记录仅段 1、3；上下文计数 2 = 事件数 |
 | 24 | `P0` | `INTENT-02-CLEANUP-FLAGS-01` 去标志位 | `REAL_OK` | 删除两个 shadow flag，新链成为唯一默认路径 | 删除 `UNIFIED_SHADOW_ENABLED`/`UNIFIED_SHADOW_EXECUTE_ENABLED` 及 `validate_shadow_flags`（config.py 与 .env.example 同步清理）；main 的观察器/执行器无条件创建、删除旧 submit 分支与观察-only 提前显示、`skip_ingest` 恒 True；删除 test_config.py 5 项开关测试；代码零残留引用；全量 438 项通过。真实会话 `20260814_095506` 不退化复验通过：启动打印"统一理解链已启用（唯一默认路径）"；6 段口述"提交 2 段实验口述"，控制/弃权不占计数；ASR 误识别"看待确认问题"被统一链正确理解 review；"还有什么问题？"走精确快速路径零 LLM；上下文 2 = 事件数 |
 | 25 | `P0` | `INTENT-02-CLEANUP-SUBMIT-01` 去旧 submit 分支 | `REAL_OK` | 删除旧 submit、skip_ingest 和旧显示补丁 | 旧 SegmentProcessor LLM 路径从 main 消失：删 `create_experiment_llm_processor`、`SegmentProcessor`/`SessionProcessingQueue`/`CompletedSegment` 使用与 import、四个旧显示函数、`_display` 及全部 `collect_ready/finish/pending_count` 调用、外层 try/finally 队列收尾；统一链事件落盘改用 `event_store`；删 `tests/test_reply_coordinator_integration.py`；main.py 净删 847 行；全量 433 项通过。真实会话 `20260814_102122` 复验通过：3 段口述"提交 2 段实验口述"、上下文 2 = 事件数、无事件保存失败、无"当前待处理任务数"。首轮复验（`20260814_101632/101744`）抓出重构 Bug：`event_store` 未作为参数传入 `run_experiment_session` 导致 NameError、事件全丢（上下文 0）；补传参修复后复验通过——真实验收成功拦截单测盲区 |
-| 26 | `P0` | `INTENT-02-CLEANUP-COMMAND-01` 统一命令入口 | `TODO` | 消除三道旧门卫和 `_new_chain_handled_answer` 补丁 | 每种命令有且只有一条处理路径 |
+| 26 | `P0` | `INTENT-02-CLEANUP-COMMAND-01` 统一命令入口 | `REAL_OK` | 消除三道旧门卫和 `_new_chain_handled_answer` 补丁 | 主循环删除 targeted-answer/clarification/confirmation 三道门卫及补丁，统一链成为唯一命令路径；搬入新链三件职责：① review 显示（`display_review_result`，修复 `INTENT-02-REVIEW-OUTPUT-01`）② confirm 动作确认记录持久化（`ConfirmationRecord.from_executed_confirmation` + `ReplyCoordinator.find_clarification`）③ 执行反馈；删 `test_confirmation_main.py`；全量 432 项通过。真实会话 `20260814_104104`：20 段口述——查看显示多次生效（"当前没有待确认问题"/"当前共有 N 个"）、create 追问 3 次、answer 指定回答 3 次解决 2 个问题、计数"提交 6 段"、上下文 6 = 事件数、剩余问题列出；**附注**：确认记录真实路径未触发（无 needs_confirmation 场景，单测覆盖，VERIFY-01 补"水域/水浴"式场景） |
 | 27 | `P0` | `INTENT-02-CLEANUP-NAMING-01` 去影子命名 | `TODO` | 观察器等改为正式执行链命名 | 不再有误导性的 shadow 概念 |
 | 28 | `P0` | `INTENT-02-CLEANUP-VERIFY-01` 清理后真实验收 | `TODO` | 五类口述连续会话验收 | 全量测试通过且真实功能不减 |
 | 29 | `P1` | Query/Safety/Knowledge 三组合同与 Fake | `TODO` | 独立类型和协议，不接 main | **清理后第一批** |
@@ -133,6 +135,7 @@ QUERY-TYPES-01 + SAFETY-TYPES-01 + KNOWLEDGE-PROTOCOLS-01 （并行，纯类型�
 | 31 | `P2` | 安全、RAG、查询真实接入与 E2E | `TODO` | 见第 I.2 节 | PRESENT 与团队服务合同稳定后 |
 | 32 | `P1` | `INTENT-02-REVIEW-OUTPUT-01` 统一链 review 查看结果输出 | `TODO` | 新链识别到 review 动作时显示待确认列表或"没有待确认问题" | 真实会话 20260814_095506 暴露：ASR 误识别"看待确认问题"被统一链接住后只显示"第 N 段已保存"，无查看结果；`ClarificationExecutor` 的 REVIEW 分支只返回"只读动作"不携带列表；旧门卫的 `display_clarification_command_result` 只服务解析器精确匹配的说法；建议与 `INTENT-02-CLEANUP-COMMAND-01` 同步处理（删旧门卫时把查看显示职责搬进新链） |
 | 33 | `P1` | `INTENT-02-ASR-ROBUSTNESS-01` ASR 误识别鲁棒性评测 | `TODO` | 固定"噪声转写"集（真实误识别样例+同音变体）→ 统一链意图路由对照报告 | 用户提出（2026-08-14）：ASR 识别不准时检验新链容忍度。两层：①Fake LLM 确定性断言（review/experiment/abstention 路由正确）；②真实 DeepSeek 旁路报告（复用 evaluate_unified_dispatch_wav 模式，只读不写业务数据）。数据从真实会话误识别收集（095506 已有"看待确认问题/难有什么问题"），与 `INTENT-02-CLEANUP-VERIFY-01` 的"说歪了"验收场景衔接；清理完成后执行 |
+| 34 | `P1` | `UNIFIED-PROMPT-ASR-ERROR-CONFIRM-01` 统一Prompt补疑似ASR错词确认规则 | `TODO` | 实体疑似同音错词/识别错误时 needs_confirmation=true + confirmation_reason + 确认追问 | 用户观察（2026-08-14 会话 104104）："使用一夜枪取50微生缓冲液"未触发确认——统一提示词（unified_prompts.py）缺少旧链曾有的"疑似识别错误→需要确认"规则（历史事件有 confirmation_reason 证据），与 UNIFIED-PROMPT-MISSING-FIELDS-01 同款丢失；补规则 + 提示词合同测试 + 真实复验"移液枪/微升"场景；该场景触发 confirm 后可顺带补验 ConfirmationRecord 真实落盘（experiment_confirmations.jsonl） |
 
 ### 当前路线为什么这样排
 
@@ -788,6 +791,9 @@ Word/PDF 属于表现层增强，可以在系统 TTS 之后完成。
 | 2026-08-14 | 完成 INTENT-02-CLEANUP-SUBMIT-01 去旧 submit 残留（AUTO_OK） | Python3.11 全量 433 项通过（−5 项旧显示链测试） | main 删除旧链全部残留：create_experiment_llm_processor、SegmentProcessor/SessionProcessingQueue/CompletedSegment、四个旧显示函数、_display、collect_ready/finish/pending_count、外层 finally 队列收尾；统一链改用 main 的 event_store 落盘；main.py 净删 847 行；未动麦克风/LLM | `INTENT-02-CLEANUP-SUBMIT-01` 真实会话不退化复验 → `INTENT-02-CLEANUP-COMMAND-01` |
 | 2026-08-14 | SUBMIT-01 首轮复验抓出重构 Bug 并修复 | 433 项通过 | 会话 20260814_101632/101744：每段报"事件保存失败：NameError: name 'event_store' is not defined"，事件全丢、上下文 0——重构把 `segment_processor.event_store` 改为 `event_store` 但未把 event_store 作为参数传入 `run_experiment_session`（跨函数作用域错误）；单测不执行主循环故全绿；补传参修复 | `INTENT-02-CLEANUP-SUBMIT-01` 复验重跑 |
 | 2026-08-14 | SUBMIT-01 复验通过升级 REAL_OK | 433 项通过 | 会话 20260814_102122：3 段口述"提交 2 段实验口述"、上下文 2 = 事件数、无事件保存失败、无"当前待处理任务数"（ASR 105 条 +3、事件 52 条 +2 仅段 1、3） | `INTENT-02-CLEANUP-COMMAND-01` 统一命令入口 |
+| 2026-08-14 | 完成 INTENT-02-CLEANUP-COMMAND-01 统一命令入口（AUTO_OK） | Python3.11 全量 432 项通过（−4 门卫测试 +3 工厂测试） | 删三道门卫+补丁，统一链唯一命令路径；review 显示（REVIEW-OUTPUT-01）、确认记录持久化（from_executed_confirmation + find_clarification）、执行反馈搬进新链；删 test_confirmation_main.py；未动麦克风/LLM | `INTENT-02-CLEANUP-COMMAND-01` 真实会话验收 → `INTENT-02-CLEANUP-NAMING-01` |
+| 2026-08-14 | COMMAND-01 真实验收升级 REAL_OK | 432 项通过 | 会话 20260814_104104：20 段口述——查看显示多次生效、create 追问 3 次、answer 解决 2 问题、计数"提交 6 段"、上下文 6 = 事件数、剩余问题列出（ASR 125 条 +20、事件 58 条 +6）；确认记录真实路径未触发（无 needs_confirmation 场景），单测覆盖，VERIFY-01 补 | `INTENT-02-CLEANUP-NAMING-01` 去影子命名 |
+| 2026-08-14 | 用户观察"移液枪未被纠正"（登记 UNIFIED-PROMPT-ASR-ERROR-CONFIRM-01） | 未改代码 | 会话 104104 第 14 段"一夜枪/微生"未触发确认；统一提示词缺"疑似识别错误→needs_confirmation"规则（旧链有，历史 confirmation_reason 为证），与 MISSING-FIELDS 丢失同款；原文保留不受影响（ASR-02） | `UNIFIED-PROMPT-ASR-ERROR-CONFIRM-01` 补规则+测试+真实复验 |
 
 ## 7. 每轮结束时必须更新
 

@@ -19,9 +19,8 @@ from src.config import (
 from src.core.confirmation_record import (
     ConfirmationRecord,
 )
-from src.core.clarification_command_handler import (
-    ClarificationCommandResult,
-    try_handle_clarification_command,
+from src.core.clarification_acceptance import (
+    ClarificationActionType,
 )
 from src.core.interaction_command import (
     InteractionCommandParser,
@@ -31,15 +30,10 @@ from src.core.pending_clarification import (
     ClarificationStatus,
 )
 from src.core.reply_coordinator import (
-    ConfirmationResolution,
     ReplyCoordinator,
 )
 from src.core.session_context import (
     SessionContext,
-)
-from src.core.targeted_clarification import (
-    TargetedAnswerStatus,
-    resolve_targeted_answer,
 )
 from src.core.unified_acceptance_bypass import UnifiedAcceptanceBypass
 from src.core.unified_shadow import (
@@ -209,110 +203,25 @@ def display_unresolved_clarifications(
 
     print()
 
-def try_handle_confirmation_answer(
-    *,
-    asr_result,
-    session_id: str,
-    segment_id: int,
+def display_review_result(
     reply_coordinator: ReplyCoordinator,
-    asr_store: ASRResultStore,
-    confirmation_store: ConfirmationStore,
-) -> ConfirmationResolution | None:
-    """
-    尝试按“准备、保存、提交”处理明确肯定答复。
-
-    返回 None 表示当前文本不是可处理的确认答复。
-    """
-
-    prepared = (
-        reply_coordinator
-        .prepare_confirmation(
-            segment_id=segment_id,
-        raw_text=asr_result.asr_transcript
-        )
-    )
-
-    if prepared is None:
-        return None
-
-    # 原始 ASR 优先保存。
-    # 即使后续确认记录写入失败，
-    # 用户实际说过的话仍然可以追溯。
-    asr_store.append(
-        result=asr_result,
-        session_id=session_id,
-        segment_id=segment_id
-    )
-
-    record = (
-        ConfirmationRecord
-        .from_prepared_confirmation(
-            session_id=session_id,
-            answer_audio_path=(
-                str(asr_result.audio_path)
-            ),
-            prepared=prepared
-        )
-    )
-
-    confirmation_store.append(record)
-
-    # 只有两次持久化都成功后，
-    # 才真正关闭内存中的待确认项。
-    return (
-        reply_coordinator
-        .commit_confirmation(prepared)
-    )
-
-def display_confirmation_resolution(
-    resolution: ConfirmationResolution,
 ) -> None:
-    """显示一次已经保存并提交的确认结果。"""
+    """统一链 review 动作的查看结果显示（REVIEW-OUTPUT-01）。"""
 
-    print(
-        f"\n已保存对第 "
-        f"{resolution.source_segment_id} 段的确认答复。"
+    unresolved = (
+        reply_coordinator
+        .active_clarifications()
     )
 
-    if resolution.fully_resolved:
-        print("该待确认项已经解决。\n")
-    else:
-        remaining = "、".join(
-            resolution.remaining_fields
-        )
-        print(
-            "错词确认已完成，"
-            f"仍需补充：{remaining}。\n"
-        )
-
-def display_clarification_command_result(
-    result: ClarificationCommandResult,
-) -> None:
-    """显示暂缓或回看命令的直接结果。"""
-
-    if result.command_type == InteractionCommandType.DEFER_CURRENT:
-        if result.deferred is None:
-            print("\n当前没有正在询问的问题。\n")
-            return
-
-        print(
-            f"\n已暂缓问题 {result.deferred.display_number}。"
-        )
-        print(
-            "你可以稍后说“查看待确认问题”"
-            "重新查看。\n"
-        )
-        return
-
-    if not result.unresolved:
+    if not unresolved:
         print("\n当前没有待确认问题。\n")
         return
 
     print(
-        f"\n当前共有 {len(result.unresolved)} 个"
+        f"\n当前共有 {len(unresolved)} 个"
         "待确认问题："
     )
-    for clarification in result.unresolved:
+    for clarification in unresolved:
         status_label = (
             "已暂缓"
             if clarification.status
@@ -462,125 +371,6 @@ def run_experiment_session(
                 reply_coordinator=reply_coordinator,
                 recent_context=recent_context,
             )
-            _new_chain_handled_answer = (
-                observation.status.value == "observed"
-                and observation.clarification_action == "answer"
-            )
-
-            if _new_chain_handled_answer:
-                targeted_answer_request = None
-            else:
-                targeted_answer_request = (
-                    resolve_targeted_answer(
-                    asr_result.asr_transcript,
-                        reply_coordinator=reply_coordinator
-                    )
-                )
-
-            if (
-                targeted_answer_request is not None
-                and targeted_answer_request.status
-                != TargetedAnswerStatus.READY
-            ):
-                try:
-                    asr_store.append(
-                        result=asr_result,
-                        session_id=session_id,
-                        segment_id=segment_id
-                    )
-                except Exception as error:
-                    print(
-                        "\n指定问题答复保存失败："
-                        f"{type(error).__name__}: {error}"
-                    )
-                    print(
-                        "问题状态没有改变，"
-                        "系统将继续监听。\n"
-                    )
-                    continue
-
-                if (
-                    targeted_answer_request.status
-                    == TargetedAnswerStatus.NOT_FOUND
-                ):
-                    print(
-                        "\n没有找到未解决的问题 "
-                        f"{targeted_answer_request.display_number}。"
-                    )
-                    print(
-                        "请说“查看待确认问题”"
-                        "确认当前编号。\n"
-                    )
-                else:
-                    print(
-                        "\n请在同一句中说明问题编号和答案。"
-                    )
-                    print(
-                        "例如：“问题 2，"
-                        "水浴温度是 60 摄氏度。”\n"
-                    )
-
-                continue
-
-            try:
-                clarification_command_result = (
-                    try_handle_clarification_command(
-                        asr_result=asr_result,
-                        session_id=session_id,
-                        segment_id=segment_id,
-                        reply_coordinator=reply_coordinator,
-                        asr_store=asr_store
-                    )
-                )
-            except Exception as error:
-                print(
-                    "\n待确认命令保存失败："
-                    f"{type(error).__name__}: {error}"
-                )
-                print(
-                    "问题状态没有改变，"
-                    "系统将继续监听。\n"
-                )
-                continue
-
-            if clarification_command_result is not None:
-                display_clarification_command_result(
-                    clarification_command_result
-                )
-                continue
-
-            try:
-                confirmation_resolution = (
-                    try_handle_confirmation_answer(
-                        asr_result=asr_result,
-                        session_id=session_id,
-                        segment_id=segment_id,
-                        reply_coordinator=(
-                            reply_coordinator
-                        ),
-                        asr_store=asr_store,
-                        confirmation_store=(
-                            confirmation_store
-                        )
-                    )
-                )
-            except Exception as error:
-                print(
-                    "\n确认答复保存失败："
-                    f"{type(error).__name__}: "
-                    f"{error}"
-                )
-                print(
-                    "待确认项保持未解决，"
-                    "系统将继续监听。\n"
-                )
-                continue
-
-            if confirmation_resolution is not None:
-                display_confirmation_resolution(
-                    confirmation_resolution
-                )
-                continue
 
             # 统一链是唯一路径：只统计被采用为实验/降级证据的段。
             # 查看、暂缓、弃权、失败观察等不占实验段计数，
@@ -643,6 +433,7 @@ def run_experiment_session(
             # 才执行状态变更。
             executed = False
             execution_reason = None
+            executed_action_type = None
             if observation.pending_action is not None:
                 try:
                     exec_result = shadow_executor.execute(
@@ -650,8 +441,70 @@ def run_experiment_session(
                     )
                     executed = exec_result.state_changed
                     execution_reason = exec_result.reason
+                    executed_action_type = (
+                        observation.pending_action.action_type
+                    )
                 except Exception:
                     execution_reason = "执行器内部异常"
+
+            # 确认答复持久化（原 confirmation 门卫职责，已搬进新链）：
+            # 只有 confirm 动作真实改变状态后，才写入确认记录。
+            if (
+                executed
+                and executed_action_type
+                == ClarificationActionType.CONFIRM
+                and observation.pending_action is not None
+            ):
+                action = observation.pending_action
+                try:
+                    target = reply_coordinator.find_clarification(
+                        action.target_clarification_id
+                    )
+                    if target is not None:
+                        confirmation_store.append(
+                            ConfirmationRecord
+                            .from_executed_confirmation(
+                                session_id=session_id,
+                                clarification_id=(
+                                    target.clarification_id
+                                ),
+                                source_segment_id=(
+                                    target.source_segment_id
+                                ),
+                                answer_segment_id=segment_id,
+                                answer_raw_text=(
+                                    asr_result.asr_transcript
+                                ),
+                                answer_audio_path=(
+                                    str(asr_result.audio_path)
+                                ),
+                                fully_resolved=(
+                                    not target.is_unresolved
+                                ),
+                                remaining_fields=(
+                                    target.missing_fields
+                                ),
+                            )
+                        )
+                except Exception as error:
+                    print(
+                        "\n确认记录保存失败："
+                        f"{type(error).__name__}: {error}"
+                    )
+                    print(
+                        "ASR 原文与问题状态已保存，"
+                        "系统将继续监听。\n"
+                    )
+
+            # 查看动作只读：显示待确认列表（REVIEW-OUTPUT-01）。
+            if (
+                observation.clarification_action == "review"
+                and observation.status
+                == ShadowObservationStatus.OBSERVED
+            ):
+                display_review_result(
+                    reply_coordinator
+                )
 
             observation = replace(
                 observation,

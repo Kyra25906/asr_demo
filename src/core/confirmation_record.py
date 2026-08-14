@@ -155,6 +155,42 @@ class ConfirmationRecord:
             remaining_fields=prepared.remaining_fields,
         )
 
+    @classmethod
+    def from_executed_confirmation(
+        cls,
+        *,
+        session_id: str,
+        clarification_id: str,
+        source_segment_id: int,
+        answer_segment_id: int,
+        answer_raw_text: str,
+        answer_audio_path: str,
+        fully_resolved: bool,
+        remaining_fields: tuple[str, ...],
+    ) -> "ConfirmationRecord":
+        """由统一链执行成功后的确认结果创建持久化记录。
+
+        统一链的 confirm 动作不经过旧的 prepare/commit 流程，
+        因此记录直接由执行结果显式字段构造。
+        """
+
+        return cls(
+            record_id=(
+                f"{session_id}:confirmation:"
+                f"{answer_segment_id}:"
+                f"{clarification_id}"
+            ),
+            session_id=session_id,
+            clarification_id=clarification_id,
+            source_segment_id=source_segment_id,
+            answer_segment_id=answer_segment_id,
+            answer_raw_text=answer_raw_text,
+            answer_audio_path=answer_audio_path,
+            decision=ConfirmationDecision.CONFIRMED,
+            fully_resolved=fully_resolved,
+            remaining_fields=remaining_fields,
+        )
+
     @staticmethod
     def _require_text(
         value: str,

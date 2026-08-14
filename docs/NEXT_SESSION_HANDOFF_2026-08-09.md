@@ -10,22 +10,23 @@
 
 - 正式解释器：Python 3.11.9，项目 `.venv` 可用。
 - 核心依赖和 `src.main` 导入成功；冷启动约 113 秒。
-- 全量自动测试：`Ran 433 tests in 1.232s — OK`。
+- 全量自动测试：`Ran 432 tests in 1.272s — OK`。
 - `MAIN-SESSION-CONTEXT-01` 统一链路上下文：**REAL_OK**（会话 `20260814_092200`）。
 - `MAIN-RUNTIME-HARDEN-01` 运行边界整理：**REAL_OK**（会话 `20260814_093515`）。
 - `INTENT-02-CLEANUP-FLAGS-01` 去标志位：**REAL_OK**（会话 `20260814_095506`）。
-- `INTENT-02-CLEANUP-SUBMIT-01` 去旧 submit 残留：**REAL_OK**（main 净删 847 行；首轮复验抓出 event_store 未传参 Bug 已修复；会话 `20260814_102122` 复验通过）。
-- 最近真实会话：`20260814_102122`。
-- main 仍保留旧命令门卫（clarification/confirmation/targeted answer），等待 COMMAND-01 统一。
+- `INTENT-02-CLEANUP-SUBMIT-01` 去旧 submit 残留：**REAL_OK**（会话 `20260814_102122`）。
+- `INTENT-02-CLEANUP-COMMAND-01` 统一命令入口：**REAL_OK**（会话 `20260814_104104`：20 段口述，查看显示/追问/指定回答/计数/上下文/结束全部验证；确认记录真实路径未触发，留待 VERIFY-01 补）。
+- 最近真实会话：`20260814_104104`。
+- 孤儿模块（`clarification_command_handler.py`、`targeted_clarification.py`）main 已不调用，删除与否留待 VERIFY 前集中处理。
 - 工作区存在用户累计未提交修改；不得覆盖、回退或混入无关变更。
 
 ## 2. 当前唯一下一项
 
-`INTENT-02-CLEANUP-COMMAND-01`：统一命令入口。
+`INTENT-02-CLEANUP-NAMING-01`：去影子命名。
 
-1. 消除三道旧门卫（`try_handle_clarification_command`、`try_handle_confirmation_answer`、`resolve_targeted_answer` 的旧处理路径）和 `_new_chain_handled_answer` 补丁；
-2. 每种命令有且只有一条处理路径（统一链 ClarificationExecutor）；
-3. 顺带实现 `INTENT-02-REVIEW-OUTPUT-01`：统一链识别到 review 时显示待确认列表或"没有待确认问题"（旧门卫的显示职责搬进新链）。
+1. `shadow` 相关命名改为正式执行链命名：`UnifiedShadowObserver`/`ShadowObservation`/`display_shadow_observation`/`create_unified_shadow_observer`/`shadow_executor`/`shadow-` request_id 前缀等；
+2. 纯机械改名，不改变任何行为；
+3. 改名后全量测试 + 下一次真实会话确认不退化（顺便补确认记录场景：说"将样品放在水域中加热"触发 needs_confirmation → "是的" → 验证 `results/experiment_confirmations.jsonl` 写入，属 VERIFY-01 验收项，可提前做）。
 
 真实会话核验工具：`.\.venv\Scripts\python.exe -B -m scripts.verify_session_context <session_id>`（输出 ASR 段数、事件数、预期上下文计数）。
 

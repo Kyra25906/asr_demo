@@ -307,6 +307,18 @@ class ReplyCoordinator:
                 return clarification
         return None
 
+    def find_clarification(
+        self,
+        clarification_id: str,
+    ) -> PendingClarification | None:
+        """公开查找接口：按 id 返回澄清对象（含已解决的）。
+
+        供主流程持久化确认记录等场景读取澄清信息，
+        不修改任何状态。
+        """
+
+        return self._find_clarification(clarification_id)
+
     def defer_current(
         self,
         *,
