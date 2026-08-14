@@ -57,6 +57,9 @@ from src.core.unified_shadow import (
     ShadowObservationStatus,
     UnifiedShadowObserver,
 )
+from src.core.retry import (
+    next_backoff_delay,
+)
 from src.core.state_manager import (
     StateManager,
 )
@@ -887,9 +890,12 @@ def run_experiment_session(
 
                 )
 
-                experiment_segment_count += 1
-
                 if UNIFIED_SHADOW_EXECUTE_ENABLED:
+                    # 统一链：只统计被采用为实验/降级证据的段。
+                    # 查看、暂缓、弃权、失败观察等不占实验段计数，
+                    # 否则结束时"提交 N 段实验口述"会虚高。
+                    if observation.is_experiment_evidence:
+                        experiment_segment_count += 1
                     # 统一链路活跃：ASR 由 main 直接落盘，
                     # 不再通过旧 SegmentProcessor 调 LLM。
                     # 有实验分析时一并保存事件，
@@ -979,6 +985,9 @@ def run_experiment_session(
                     # 回退路径：统一链路关闭时，
                     # 走旧 SegmentProcessor
                     # （含 LLM 调用）。
+                    # 旧链每段都产出结构化分析或降级 NOTE，
+                    # 因此每段都计入实验段。
+                    experiment_segment_count += 1
                     completed_during_submit = (
                         processing_queue.submit(
                             asr_result=(
@@ -1178,6 +1187,10 @@ def main() -> None:
         "按 Ctrl+C 关闭程序。\n"
     )
 
+    # 唤醒连续失败次数：每次失败按指数退避等待，
+    # 成功后重置为 0，避免音频设备异常时疯狂转圈。
+    consecutive_failures = 0
+
     while True:
         state_manager.change_to(
             AssistantState.IDLE
@@ -1188,6 +1201,7 @@ def main() -> None:
                 wakeword_detector
                 .wait_for_wake_word()
             )
+            consecutive_failures = 0
 
             print(
                 f"\n唤醒成功："
@@ -1213,15 +1227,21 @@ def main() -> None:
             )
 
         except Exception as error:
+            consecutive_failures += 1
+            retry_delay = next_backoff_delay(
+                consecutive_failures
+            )
             print(
                 "\n唤醒或会话异常："
                 f"{type(error).__name__}: "
                 f"{error}"
             )
             print(
-                "系统将重新进入"
-                "待机状态。\n"
+                "系统将重新进入待机状态，"
+                f"{retry_delay:.1f} 秒后重试"
+                f"（连续第 {consecutive_failures} 次）。\n"
             )
+            time.sleep(retry_delay)
 
         finally:
             state_manager.change_to(

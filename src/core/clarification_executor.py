@@ -260,18 +260,6 @@ class ClarificationExecutor:
                 ),
             )
 
-        if not supplied_fields:
-            return self._result(
-                action,
-                state_changed=False,
-                answer_text_received=True,
-                reason=(
-                    f"收到对问题 {target.display_number} 的答复"
-                    f"\"{action.answer_text}\"，"
-                    "但未从中提取到实体字段。"
-                ),
-            )
-
         try:
             updated = self._coordinator.answer_clarification(
                 clarification_id=action.target_clarification_id,

@@ -3,6 +3,7 @@ import unittest
 from src.asr.schemas import ASRResult
 from src.core.reply_coordinator import ReplyCoordinator
 from src.core.unified_shadow import (
+    ShadowObservation,
     ShadowObservationStatus,
     UnifiedShadowObserver,
 )
@@ -156,6 +157,34 @@ class UnifiedShadowObserverTests(unittest.TestCase):
             reply_coordinator=ReplyCoordinator(),
         )
         self.assertEqual(bypass.inputs[0].recent_context, ())
+
+
+def _observation(acceptance_kind):
+    return ShadowObservation(
+        request_id="shadow-session-1-segment-1",
+        session_id="session-1",
+        segment_id=1,
+        status=ShadowObservationStatus.OBSERVED,
+        destination="experiment_pipeline",
+        permission="forward_experiment_analysis",
+        clarification_action="no_action",
+        acceptance_kind=acceptance_kind,
+    )
+
+
+class ShadowObservationEvidenceTests(unittest.TestCase):
+    def test_structured_experiment_counts_as_experiment_evidence(self):
+        self.assertTrue(
+            _observation("structured_experiment").is_experiment_evidence
+        )
+
+    def test_degraded_note_counts_as_experiment_evidence(self):
+        self.assertTrue(
+            _observation("degraded_evidence_note").is_experiment_evidence
+        )
+
+    def test_no_acceptance_does_not_count_as_experiment_evidence(self):
+        self.assertFalse(_observation(None).is_experiment_evidence)
 
 
 if __name__ == "__main__":

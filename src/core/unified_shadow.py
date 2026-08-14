@@ -62,6 +62,19 @@ class ShadowObservation:
         elif self.error_type is None:
             raise ValueError("失败观察必须包含错误类型。")
 
+    @property
+    def is_experiment_evidence(self) -> bool:
+        """是否产生可入库的实验分析证据（含降级 NOTE）。
+
+        只有结构化实验或降级证据 NOTE 才算实验段；
+        查看、暂缓、弃权、失败观察都不算，避免计数虚高。
+        """
+
+        return self.acceptance_kind in {
+            "structured_experiment",
+            "degraded_evidence_note",
+        }
+
 
 class UnifiedShadowObserver:
     """观察统一链路的施工单；配置执行器后可真实修改协调器。"""
