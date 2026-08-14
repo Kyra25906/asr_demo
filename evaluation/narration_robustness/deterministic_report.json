@@ -1,0 +1,265 @@
+{
+  "session_id": "narration_robustness_20260814",
+  "schema_version": 1,
+  "segment_count": 28,
+  "categories": {
+    "零误触发": 13,
+    "依赖LLM容错": 7,
+    "精确命中": 5,
+    "已知限制": 3
+  },
+  "rows": [
+    {
+      "segment_id": 1,
+      "challenge_type": "normal",
+      "observed_asr_text": "加入5毫升缓冲液并搅拌。",
+      "exact_command": "normal",
+      "exact_target_question_number": null,
+      "category": "零误触发",
+      "detail": "实验段不触发任何控制命令"
+    },
+    {
+      "segment_id": 2,
+      "challenge_type": "missing_fields",
+      "observed_asr_text": "将溶液加热。",
+      "exact_command": "normal",
+      "exact_target_question_number": null,
+      "category": "零误触发",
+      "detail": "实验段不触发任何控制命令"
+    },
+    {
+      "segment_id": 3,
+      "challenge_type": "answer_no_number",
+      "observed_asr_text": "加热到60摄氏度。",
+      "exact_command": "normal",
+      "exact_target_question_number": null,
+      "category": "依赖LLM容错",
+      "detail": "精确解析为normal，需LLM语义容错"
+    },
+    {
+      "segment_id": 4,
+      "challenge_type": "answer_no_number",
+      "observed_asr_text": "持续10分钟。",
+      "exact_command": "normal",
+      "exact_target_question_number": null,
+      "category": "依赖LLM容错",
+      "detail": "精确解析为normal，需LLM语义容错"
+    },
+    {
+      "segment_id": 5,
+      "challenge_type": "asr_noise_control",
+      "observed_asr_text": "看待确认问题。",
+      "exact_command": "normal",
+      "exact_target_question_number": null,
+      "category": "依赖LLM容错",
+      "detail": "精确解析为normal，需LLM语义容错"
+    },
+    {
+      "segment_id": 6,
+      "challenge_type": "control_review_exact",
+      "observed_asr_text": "还有什么问题？",
+      "exact_command": "review_pending",
+      "exact_target_question_number": null,
+      "category": "精确命中",
+      "detail": "零LLM快速路径命中"
+    },
+    {
+      "segment_id": 7,
+      "challenge_type": "asr_noise_entity",
+      "observed_asr_text": "使用一夜枪取50微生缓冲液。",
+      "exact_command": "normal",
+      "exact_target_question_number": null,
+      "category": "零误触发",
+      "detail": "实验段不触发任何控制命令"
+    },
+    {
+      "segment_id": 8,
+      "challenge_type": "confirm",
+      "observed_asr_text": "是的。",
+      "exact_command": "affirm",
+      "exact_target_question_number": null,
+      "category": "精确命中",
+      "detail": "零LLM快速路径命中"
+    },
+    {
+      "segment_id": 9,
+      "challenge_type": "asr_noise_entity",
+      "observed_asr_text": "加入0.5摩尔绿化纳。",
+      "exact_command": "normal",
+      "exact_target_question_number": null,
+      "category": "零误触发",
+      "detail": "实验段不触发任何控制命令"
+    },
+    {
+      "segment_id": 10,
+      "challenge_type": "asr_noise_entity_missing",
+      "observed_asr_text": "将缓冲液放入水域中加热。",
+      "exact_command": "normal",
+      "exact_target_question_number": null,
+      "category": "零误触发",
+      "detail": "实验段不触发任何控制命令"
+    },
+    {
+      "segment_id": 11,
+      "challenge_type": "answer_wrong_number",
+      "observed_asr_text": "问题二，持续10分钟。",
+      "exact_command": "targeted_answer",
+      "exact_target_question_number": 2,
+      "category": "已知限制",
+      "detail": "编号2不在待确认列表，下游应no_action或提醒"
+    },
+    {
+      "segment_id": 12,
+      "challenge_type": "answer_two_in_one",
+      "observed_asr_text": "问题四，是水浴加热。问题五，持续10分钟。",
+      "exact_command": "targeted_answer",
+      "exact_target_question_number": 4,
+      "category": "已知限制",
+      "detail": "整句被当问题4的答案，第二个问题拼入answer_text"
+    },
+    {
+      "segment_id": 13,
+      "challenge_type": "answer_number_only",
+      "observed_asr_text": "问题5。",
+      "exact_command": "targeted_answer",
+      "exact_target_question_number": 5,
+      "category": "已知限制",
+      "detail": "只有编号无答案内容，下游应转no_action"
+    },
+    {
+      "segment_id": 14,
+      "challenge_type": "asr_noise_entity",
+      "observed_asr_text": "用立心机离新五分钟。",
+      "exact_command": "normal",
+      "exact_target_question_number": null,
+      "category": "零误触发",
+      "detail": "实验段不触发任何控制命令"
+    },
+    {
+      "segment_id": 15,
+      "challenge_type": "defer_current",
+      "observed_asr_text": "这个问题先跳过。",
+      "exact_command": "defer_current",
+      "exact_target_question_number": null,
+      "category": "精确命中",
+      "detail": "零LLM快速路径命中"
+    },
+    {
+      "segment_id": 16,
+      "challenge_type": "defer_current",
+      "observed_asr_text": "我先跳过。",
+      "exact_command": "defer_current",
+      "exact_target_question_number": null,
+      "category": "精确命中",
+      "detail": "零LLM快速路径命中"
+    },
+    {
+      "segment_id": 17,
+      "challenge_type": "case_variant_tolerance",
+      "observed_asr_text": "用PH计测量，PH值是7.2。",
+      "exact_command": "normal",
+      "exact_target_question_number": null,
+      "category": "零误触发",
+      "detail": "实验段不触发任何控制命令"
+    },
+    {
+      "segment_id": 18,
+      "challenge_type": "deny_correct",
+      "observed_asr_text": "不对，应该是7.4。",
+      "exact_command": "deny",
+      "exact_target_question_number": null,
+      "category": "精确命中",
+      "detail": "零LLM快速路径命中"
+    },
+    {
+      "segment_id": 19,
+      "challenge_type": "asr_noise_entity",
+      "observed_asr_text": "称取0.5克穷脂糖。",
+      "exact_command": "normal",
+      "exact_target_question_number": null,
+      "category": "零误触发",
+      "detail": "实验段不触发任何控制命令"
+    },
+    {
+      "segment_id": 20,
+      "challenge_type": "context_dependent",
+      "observed_asr_text": "再加50毫升。",
+      "exact_command": "normal",
+      "exact_target_question_number": null,
+      "category": "零误触发",
+      "detail": "实验段不触发任何控制命令"
+    },
+    {
+      "segment_id": 21,
+      "challenge_type": "normal",
+      "observed_asr_text": "加热溶解至透明。",
+      "exact_command": "normal",
+      "exact_target_question_number": null,
+      "category": "零误触发",
+      "detail": "实验段不触发任何控制命令"
+    },
+    {
+      "segment_id": 22,
+      "challenge_type": "asr_noise_entity",
+      "observed_asr_text": "用振档器振档混匀。",
+      "exact_command": "normal",
+      "exact_target_question_number": null,
+      "category": "零误触发",
+      "detail": "实验段不触发任何控制命令"
+    },
+    {
+      "segment_id": 23,
+      "challenge_type": "answer_no_number",
+      "observed_asr_text": "10分钟。",
+      "exact_command": "normal",
+      "exact_target_question_number": null,
+      "category": "依赖LLM容错",
+      "detail": "精确解析为normal，需LLM语义容错"
+    },
+    {
+      "segment_id": 24,
+      "challenge_type": "observation_anomaly",
+      "observed_asr_text": "样品颜色变浑浊了。",
+      "exact_command": "normal",
+      "exact_target_question_number": null,
+      "category": "零误触发",
+      "detail": "实验段不触发任何控制命令"
+    },
+    {
+      "segment_id": 25,
+      "challenge_type": "measurement",
+      "observed_asr_text": "电流显示80毫安。",
+      "exact_command": "normal",
+      "exact_target_question_number": null,
+      "category": "零误触发",
+      "detail": "实验段不触发任何控制命令"
+    },
+    {
+      "segment_id": 26,
+      "challenge_type": "uncertain_semantics",
+      "observed_asr_text": "这个管子有点脏。",
+      "exact_command": "normal",
+      "exact_target_question_number": null,
+      "category": "依赖LLM容错",
+      "detail": "精确解析为normal，需LLM语义容错"
+    },
+    {
+      "segment_id": 27,
+      "challenge_type": "uncertain_semantics",
+      "observed_asr_text": "这个差不多了。",
+      "exact_command": "normal",
+      "exact_target_question_number": null,
+      "category": "依赖LLM容错",
+      "detail": "精确解析为normal，需LLM语义容错"
+    },
+    {
+      "segment_id": 28,
+      "challenge_type": "end_session",
+      "observed_asr_text": "今天先记录到这里吧。",
+      "exact_command": "normal",
+      "exact_target_question_number": null,
+      "category": "依赖LLM容错",
+      "detail": "精确解析为normal，需LLM语义容错"
+    }
+  ]
+}

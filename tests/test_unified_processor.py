@@ -70,6 +70,8 @@ class UnifiedPromptTests(unittest.TestCase):
         prompt = UNIFIED_UNDERSTANDING_SYSTEM_PROMPT
         for required in (
             "仅当待确认问题只有一个",
+            "缺失的字段",
+            "不得当作回答",
             "不得自动归属",
             "targeted_answer",
             "疑似同音错词",

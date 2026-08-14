@@ -45,7 +45,7 @@ TODO → DESIGN → CODED → AUTO_OK → REAL_OK
 
 ## 2. 当前测试基线
 
-- 当前全量自动测试：`433 tests OK`（Python 3.11.9，2026-08-14）
+- 当前全量自动测试：`454 tests OK`（Python 3.11.9，2026-08-14，含 ASR 鲁棒性语料 21 项）
 - 环境验证：核心依赖和 `src.main` 导入成功；首次沙箱内失败已确认是执行权限误判，不是 `.venv` 损坏
 - 最近真实连续口述会话：`20260814_110116`
 - 最近真实会话已验证：命令结果自动输出（create 追问文本/answer 反馈/confirm 反馈直接显示）；**错词确认生效**（"一夜枪"→"疑似ASR识别错误：'一夜枪'可能应为'移液枪'"→确认问题→"是的"→confirm）且**确认记录首次真实落盘**（experiment_confirmations.jsonl 第 1 行）；无编号回答"时间为10分钟"→ abstention（安全不再误当新事件，但未自动接住回答）；计数"提交 4 段"、上下文 4 = 事件数、剩余问题正确
@@ -134,10 +134,11 @@ QUERY-TYPES-01 + SAFETY-TYPES-01 + KNOWLEDGE-PROTOCOLS-01 （并行，纯类型�
 | 30 | `P1` | QUERY 第四分支与只读分派 | `TODO` | unified 识别 QUERY，路由到知识查询边界 | 不接真实设备服务或 RAG |
 | 31 | `P2` | 安全、RAG、查询真实接入与 E2E | `TODO` | 见第 I.2 节 | PRESENT 与团队服务合同稳定后 |
 | 32 | `P1` | `INTENT-02-REVIEW-OUTPUT-01` 统一链 review 查看结果输出 | `TODO` | 新链识别到 review 动作时显示待确认列表或"没有待确认问题" | 真实会话 20260814_095506 暴露：ASR 误识别"看待确认问题"被统一链接住后只显示"第 N 段已保存"，无查看结果；`ClarificationExecutor` 的 REVIEW 分支只返回"只读动作"不携带列表；旧门卫的 `display_clarification_command_result` 只服务解析器精确匹配的说法；建议与 `INTENT-02-CLEANUP-COMMAND-01` 同步处理（删旧门卫时把查看显示职责搬进新链） |
-| 33 | `P1` | `INTENT-02-ASR-ROBUSTNESS-01` ASR 误识别鲁棒性评测 | `TODO` | 固定"噪声转写"集（真实误识别样例+同音变体）→ 统一链意图路由对照报告 | 用户提出（2026-08-14）：ASR 识别不准时检验新链容忍度。两层：①Fake LLM 确定性断言（review/experiment/abstention 路由正确）；②真实 DeepSeek 旁路报告（复用 evaluate_unified_dispatch_wav 模式，只读不写业务数据）。数据从真实会话误识别收集（095506 已有"看待确认问题/难有什么问题"），与 `INTENT-02-CLEANUP-VERIFY-01` 的"说歪了"验收场景衔接；清理完成后执行 |
+| 33 | `P1` | `INTENT-02-ASR-ROBUSTNESS-01` ASR 误识别鲁棒性评测 | `REAL_OK` | 固定"噪声转写"集（真实误识别样例+同音变体）→ 统一链意图路由对照报告 | **提前执行（2026-08-14，用户直接要求，不改变 NAMING-01 的 P0 顺序）**。新增 `evaluation/narration_robustness/narration_plan.json`（28 段连贯实验口述：正常/缺失字段/无编号回答/错编号/双回答/只有编号/ASR误识别-控制/ASR误识别-实体/误识别+缺失双重/暂缓/否定修正/大小写变体容忍/上下文依赖/异常观察/测量/语义弃权/结束，每段带 spoken/observed 双文本与期望标注）+ `src/evaluation/narration_robustness_plan.py` 严格 schema + `tests/test_narration_robustness_plan.py` 21 项（schema 拒绝坏数据；13 实验段零控制误触发；"看待确认问题"依赖 LLM 容错、"还有什么问题"精确命中、"问题5。"缺答案→no_action、双回答已知限制文档化等）。确定性报告：零误触发 13/依赖LLM 7/精确命中 5/已知限制 3。真实 DeepSeek 旁路 `scripts/evaluate_narration_robustness.py --mode real`（只读）：**21/28 一致、7 缺口**，登记新任务 ASR-ROBUSTNESS-RULE-GAPS-01；全量 454 项通过 |
 | 34 | `P1` | `UNIFIED-PROMPT-ASR-ERROR-CONFIRM-01` 统一Prompt补疑似ASR错词确认规则 | `REAL_OK` | 实体疑似同音错词/识别错误时 needs_confirmation=true + confirmation_reason + 确认追问 | 统一提示词实验规则新增"实体疑似同音错词或ASR识别错误时设置needs_confirmation"；合同测试断言；全量 433 项通过。真实会话 `20260814_110116` 段 11："使用一夜枪取50微升缓冲液" → 事件 `needs_confirmation=True, reason="疑似ASR识别错误：'一夜枪'可能应为'移液枪'"` + 确认问题"您说的'一夜枪'是指移液枪吗？"；段 12"问题三，是的，是一夜枪。" → confirm 执行 → **确认记录首次真实落盘**（experiment_confirmations.jsonl 第 1 行） |
-| 35 | `P1` | `INTENT-02-ANSWER-UX-01` 回答体验：反馈补缺 + 无编号回答识别 | `REAL_OK` | ①answer 部分完成后明确提示"仍缺字段"；②仅一个待确认问题时无编号事实性短句判为对该问题的回答（多个时不得自动归属） | ①执行器 reason 含"仍需补充" ✅（真实反馈"已将对问题 1 的答复的实体字段…填入。问题已解决。"）；②统一提示词规则限定单/多问题（合同测试断言）；**真实复验部分达成**：段 2"时间为10分钟"→ abstention（安全：不再误当新事件；但未自动接住为回答，LLM 保守弃权，用户仍需说编号）——"不误判"已验证，"贴心接住"未实现，是否做 planner 侧确定性兜底留待决定 |
+| 35 | `P1` | `INTENT-02-ANSWER-UX-01` 回答体验：反馈补缺 + 无编号回答识别 | `AUTO_OK` | ①answer 部分完成后明确提示"仍缺字段"；②仅一个待确认问题时无编号事实性短句判为对该问题的回答（多个时不得自动归属） | ①执行器 reason 含"仍需补充" ✅（REAL_OK，会话 110116）；②无编号回答：提示词收紧（"仅提供无关事实时保持原分类，不得当作回答"，回应鲁棒性缺口⑤）+ **纯函数兜底** `src/core/answer_fallback.py`：`decide_unnumbered_answer` 确定性判定（单问题+短句+提取字段 ⊆ 问题缺失字段），main 弃权时构造 ANSWER 动作交执行器；夹带无关字段的实验记录绝不路由成回答；11 项纯函数测试；全量 467 项通过；待真实复验"时间为10分钟"被接住 |
 | 36 | `P1` | `INTENT-02-QUESTION-AUTO-OUTPUT-01` 追问/回答结果自动输出 | `REAL_OK` | create 后自动显示追问文本；answer 后自动显示"已填 X 仍缺 Y"；不依赖用户手动"查看待确认问题" | ①执行器 create reason 含问题文本；②`display_shadow_observation` executed 时显示 reason；真实会话 `20260814_110116`：段 1/5/11 create 后直接显示"已创建待确认问题 N：…"、段 10 answer 完整反馈、段 12 confirm 反馈——均自动输出，无需手动查看 |
+| 37 | `P1` | `ASR-ROBUSTNESS-RULE-GAPS-01` 鲁棒性旁路缺口修复 | `TODO` | 真实旁路报告 7 个缺口逐项定案：规则/提示词/确定性兜底 | 来源：`INTENT-02-ASR-ROBUSTNESS-01` 真实旁路（deepseek-v4-flash，21/28 一致）。7 缺口：①段3"加热到60摄氏度"当新实验事件（应回答）②段7/14 同音错词（一夜枪/微生、立心机/离新）→uncertain 弃权未触发确认（110116 曾触发，行为不稳定）③段17 "PH"大小写变体过度确认④段18"不对，应该是7.4"被 LLM 判为 targeted_answer（精确解析为 deny，两路不一致）⑤段20"再加50毫升"、段25"电流显示80毫安"在有待确认问题时被过度判为回答（提示词"事实性短句优先判为回答"泛化过头，与问题无关的实验事实也被归为回答）。建议：提示词加"回答须与问题内容相关"约束 + planner 侧确定性兜底权衡（单问题+短事实句） |
 
 ### 当前路线为什么这样排
 
@@ -799,7 +800,9 @@ Word/PDF 属于表现层增强，可以在系统 TTS 之后完成。
 | 2026-08-14 | 用户观察"回答好几遍才 ANSWER 下来"（登记 INTENT-02-ANSWER-UX-01） | 未改代码 | 会话 104104："时间为10分钟"被当新实验事件而非回答；部分回答后无"仍缺字段"反馈（COMMAND-01 删门卫丢失旧话术），用户多次重复；两个子项：反馈补缺 + 无编号回答识别 | `INTENT-02-ANSWER-UX-01` 反馈话术 + 提示词规则 + 真实复验 |
 | 2026-08-14 | 用户观察"追问创建后不自动输出"（登记 INTENT-02-QUESTION-AUTO-OUTPUT-01） | 未改代码 | 会话 104104 第 3 段 create 后仅显示摘要、无问题文本；根因 display_coordinated_reply 随 SUBMIT-01 删除；最小显示现在补（并入命令结果显示收尾轮），完整消息管线留 PRESENT-INTEGRATE-01 | `INTENT-02-QUESTION-AUTO-OUTPUT-01` 最小显示 → PRESENT 统一管线 |
 | 2026-08-14 | 完成 A+B：命令结果自动输出 + 提示词能力对齐（AUTO_OK） | Python3.11 全量 433 项通过（+1 合同测试） | A：执行器 create reason 含问题文本、answer reason 含"仍需补充"、display_shadow_observation executed 时显示 reason（原被吞）；B：统一提示词补两条规则（疑似错词→确认、无编号回答单/多问题区分）+ 合同测试；未动麦克风/LLM | A+B 真实复验（无编号回答/追问自动显示/错词确认）→ `INTENT-02-CLEANUP-NAMING-01` |
+| 2026-08-14 | 完成无编号回答纯函数兜底（用户拍板"字段相关性+纯函数"） | Python3.11 全量 467 项通过（+11 兜底测试，其中 +1 防混） | 新增 `src/core/answer_fallback.py`：`extract_entity_fields`（温度/时间/体积/浓度确定性提取）+ `decide_unnumbered_answer`（单问题+短句+提取字段⊆缺失字段才判回答，夹带无关字段的实验记录绝不路由成回答）；main 弃权(no_action)时构造 ANSWER 动作交执行器；提示词规则收紧（"仅提供无关事实时保持原分类"）回应鲁棒性缺口⑤；合同测试更新；未动麦克风/LLM | 真实复验"时间为10分钟"被接住（单问题）→ 35 REAL_OK |
 | 2026-08-14 | A+B 真实验收升级 REAL_OK（34/35/36） | 433 项通过 | 会话 20260814_110116（13 段）：create 追问文本自动显示（段1/5/11）、answer 完整反馈（段10"问题已解决"）、confirm 反馈（段12）；错词确认生效（段11"一夜枪"→needs_confirmation=True"疑似ASR识别错误：'一夜枪'可能应为'移液枪'"→确认问题→段12"是的"→confirm）→ **确认记录首次真实落盘**；无编号回答段2"时间为10分钟"→abstention（安全未误判但未接住，部分达成）；计数"提交 4 段"、上下文 4 = 事件数（ASR 138 条 +13、事件 62 条 +4） | `INTENT-02-CLEANUP-NAMING-01` 改名 → VERIFY-01 |
+| 2026-08-14 | 用户要求提前执行 ASR 鲁棒性评测（INTENT-02-ASR-ROBUSTNESS-01 REAL_OK，只建评测体系与记录问题，不改代码） | Python3.11 全量 454 项通过（+21 语料测试） | 新增 28 段噪声口述语料 + 严格 schema + 21 项确定性断言（13 实验段零误触发；"看待确认问题"依赖 LLM 容错；"还有什么问题"精确命中；双回答/错编号/只有编号已知限制文档化）；确定性报告 零误触发13/依赖LLM 7/精确命中 5/已知限制 3；**真实 DeepSeek 旁路 21/28 一致、7 缺口**（只读，未写业务数据）；用户明确指示：**先不改代码，缺口记录待定案** | 登记 `ASR-ROBUSTNESS-RULE-GAPS-01`（7 缺口）→ 按用户决定与 NAMING-01 顺序推进 |
 
 ## 7. 每轮结束时必须更新
 

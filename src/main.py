@@ -19,8 +19,13 @@ from src.config import (
 from src.core.confirmation_record import (
     ConfirmationRecord,
 )
+from src.core.answer_fallback import (
+    decide_unnumbered_answer,
+)
 from src.core.clarification_acceptance import (
+    ClarificationAction,
     ClarificationActionType,
+    ClarificationMutationPermission,
 )
 from src.core.interaction_command import (
     InteractionCommandParser,
@@ -436,6 +441,60 @@ def run_experiment_session(
 
             # commit：ASR 与事件证据都落盘成功后，
             # 才执行状态变更。
+            # 无编号回答兜底（纯函数）：统一链弃权(no_action)时，
+            # 若恰好一个待确认问题且短句提供了其缺失字段，
+            # 则确定性判为回答并构造 ANSWER 动作，交给执行器执行。
+            # 任何不满足条件的情况（多问题/字段不匹配/实验记录）
+            # 都不会被路由成回答——实验事实不会被吞。
+            if (
+                observation.clarification_action == "no_action"
+                and observation.status
+                == ShadowObservationStatus.OBSERVED
+            ):
+                unresolved = (
+                    reply_coordinator
+                    .active_clarifications()
+                )
+                fallback = decide_unnumbered_answer(
+                    pending_questions=unresolved,
+                    text=asr_result.asr_transcript,
+                )
+                if fallback.is_answer and len(unresolved) == 1:
+                    question = unresolved[0]
+                    observation = replace(
+                        observation,
+                        pending_action=ClarificationAction(
+                            request_id=(
+                                f"shadow-{session_id}-{segment_id}"
+                            ),
+                            session_id=session_id,
+                            segment_id=segment_id,
+                            asr_transcript=(
+                                asr_result.asr_transcript
+                            ),
+                            action_type=(
+                                ClarificationActionType.ANSWER
+                            ),
+                            mutation_permission=(
+                                ClarificationMutationPermission
+                                .PREPARE_UPDATE
+                            ),
+                            reason="无编号回答兜底",
+                            requires_evidence_persistence=True,
+                            target_clarification_id=(
+                                question.clarification_id
+                            ),
+                            target_display_number=(
+                                question.display_number
+                            ),
+                            expected_revision=question.revision,
+                            answer_text=(
+                                asr_result.asr_transcript
+                            ),
+                            supplied_entity_fields=fallback.fields,
+                        ),
+                    )
+
             executed = False
             execution_reason = None
             executed_action_type = None

@@ -10,20 +10,30 @@
 
 - 正式解释器：Python 3.11.9，项目 `.venv` 可用。
 - 核心依赖和 `src.main` 导入成功；冷启动约 113 秒。
-- 全量自动测试：`Ran 433 tests in 1.197s — OK`。
+- 全量自动测试：`Ran 454 tests in 1.3s — OK`（2026-08-14，含 ASR 鲁棒性语料 21 项）。
 - `MAIN-SESSION-CONTEXT-01`/`MAIN-RUNTIME-HARDEN-01`/`INTENT-02-CLEANUP-FLAGS-01`/`INTENT-02-CLEANUP-SUBMIT-01`/`INTENT-02-CLEANUP-COMMAND-01`：全部 REAL_OK。
 - A+B（命令结果自动输出 + 提示词能力对齐，任务 34/35/36）：**REAL_OK**（会话 `20260814_110116`：create/answer/confirm 反馈自动输出；错词确认生效"一夜枪→疑似移液枪"；确认记录首次真实落盘；无编号回答段 2 → abstention，安全但未接住，部分达成）。
 - 最近真实会话：`20260814_110116`。
+- `INTENT-02-ASR-ROBUSTNESS-01` ASR 误识别鲁棒性评测：**REAL_OK（提前执行，用户直接要求，不改变 NAMING-01 的 P0 顺序）**。交付：`evaluation/narration_robustness/narration_plan.json`（28 段噪声口述语料，每段 spoken/observed 双文本+期望标注）、`src/evaluation/narration_robustness_plan.py`（严格 schema）、`tests/test_narration_robustness_plan.py`（21 项）、`scripts/evaluate_narration_robustness.py`（--mode deterministic/real）。确定性：零误触发 13/依赖 LLM 7/精确命中 5/已知限制 3。真实 DeepSeek 旁路（只读）：**21/28 一致、7 缺口**。
+- **重要：7 个缺口用户明确指示先不改代码、只记录**（已登记任务清单第 37 项 `ASR-ROBUSTNESS-RULE-GAPS-01`，每条含段号/输入/实际/期望/修复方向；详见该行与 LEARNING_REVIEW 最新条目）。
 - 孤儿模块（`clarification_command_handler.py`、`targeted_clarification.py`）main 已不调用，删除与否留待 VERIFY 前集中处理。
 - 工作区存在用户累计未提交修改；不得覆盖、回退或混入无关变更。
 
 ## 2. 当前唯一下一项
 
-`INTENT-02-CLEANUP-NAMING-01`：去影子命名（纯机械改名，不改变行为）。
+无编号回答纯函数兜底（`src/core/answer_fallback.py`）真实复验，脚本：
+1. "将溶液加热" → 创建问题 1（追问自动显示）；
+2. "时间为10分钟" → **兜底应接住**：作为对问题 1 的回答 + "仍需补充：温度"（之前是 abstention 沉默）；
+3. "60摄氏度" → 补温度，问题 1 解决；
+4. "将溶液加热" → 创建问题 2（两个问题）；
+5. "加入5毫升缓冲液" → **不应被吞**（实验段，字段不匹配不路由成回答）——防混验证；
+6. "结束实验记录"。
 
-1. `shadow` 相关命名改为正式执行链命名：`UnifiedShadowObserver`/`ShadowObservation`/`display_shadow_observation`/`create_unified_shadow_observer`/`shadow_executor`/`shadow-` request_id 前缀等；
-2. 改名后全量测试 + 一次轻量真实会话确认不退化；
-3. 之后进入 `INTENT-02-CLEANUP-VERIFY-01` 清理后总验收（五类口述连续会话 + 确认记录场景已可验证——experiment_confirmations.jsonl 现已有真实数据）。
+> 说明：该兜底由用户 2026-08-14 直接指示实施（覆盖此前"7 缺口先不改代码"的约定，针对 `ASR-ROBUSTNESS-RULE-GAPS-01` 缺口①⑤），已完成代码+467 项测试，待真实复验。
+
+通过后 35 升级 REAL_OK，下一项进入 `INTENT-02-CLEANUP-NAMING-01`（shadow 改名，纯机械）。
+
+> 说明（2026-08-14）：`INTENT-02-ASR-ROBUSTNESS-01` 因用户直接要求**提前执行完毕**（只建评测体系、不改代码），其发现的 7 个缺口已登记 `ASR-ROBUSTNESS-RULE-GAPS-01` 待定案。这两项都不改变 NAMING-01 的 P0 顺序。
 
 真实会话核验工具：`.\.venv\Scripts\python.exe -B -m scripts.verify_session_context <session_id>`（输出 ASR 段数、事件数、预期上下文计数）。
 
