@@ -461,8 +461,13 @@ def run_experiment_session(
                 )
                 if fallback.is_answer and len(unresolved) == 1:
                     question = unresolved[0]
+                    # 显示字段也跟随实际动作（answer），
+                    # 避免出现"待确认动作=no_action 却已执行 answer"的自相矛盾。
                     observation = replace(
                         observation,
+                        clarification_action="answer",
+                        destination="clarification_context",
+                        permission="forward_context_candidate",
                         pending_action=ClarificationAction(
                             request_id=(
                                 f"shadow-{session_id}-{segment_id}"

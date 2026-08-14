@@ -526,6 +526,43 @@ class AnswerTests(unittest.TestCase):
         self.assertIn("版本已变更", result.reason)
 
 
+class AnswerConfirmationPendingTests(unittest.TestCase):
+    """字段已补齐但确认尚未完成时，反馈应为"仍需确认"而非"仍需补充：空"。"""
+
+    def setUp(self):
+        self.coordinator = ReplyCoordinator()
+        self.executor = ClarificationExecutor(self.coordinator)
+        self.coordinator.register_clarification(
+            segment_id=1,
+            raw_text="将缓冲液放入水域中加热。",
+            question="请确认：您是指将缓冲液放入水浴中加热吗？另外，加热的目标温度和持续时间是多少？",
+            missing_fields=("temperature", "duration"),
+            requires_confirmation=True,
+        )
+        self.coordinator.pop_next_reply()
+
+    def test_answer_filling_fields_but_pending_confirmation_says_need_confirm(self):
+        target = self.coordinator.current_clarification()
+        action = _action(
+            action_type=ClarificationActionType.ANSWER,
+            mutation_permission=ClarificationMutationPermission.PREPARE_UPDATE,
+            requires_evidence_persistence=True,
+            target_clarification_id=target.clarification_id,
+            target_display_number=target.display_number,
+            expected_revision=target.revision,
+            answer_text="是的，60摄氏度10分钟",
+            supplied_entity_fields=("temperature", "duration"),
+        )
+        result = self.executor.execute(action)
+
+        self.assertTrue(result.state_changed)
+        self.assertIn("仍需确认", result.reason)
+        self.assertNotIn("仍需补充：", result.reason)
+        updated = self.coordinator._find_clarification(target.clarification_id)
+        self.assertTrue(updated.is_unresolved)
+        self.assertEqual(updated.missing_fields, ())
+
+
 class SafetyGateTests(unittest.TestCase):
     def setUp(self):
         self.executor = ClarificationExecutor(ReplyCoordinator())

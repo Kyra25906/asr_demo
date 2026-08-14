@@ -10,9 +10,10 @@
 
 - 正式解释器：Python 3.11.9，项目 `.venv` 可用。
 - 核心依赖和 `src.main` 导入成功；冷启动约 113 秒。
-- 全量自动测试：`Ran 454 tests in 1.3s — OK`（2026-08-14，含 ASR 鲁棒性语料 21 项）。
+- 全量自动测试：`Ran 468 tests in 1.196s — OK`。
 - `MAIN-SESSION-CONTEXT-01`/`MAIN-RUNTIME-HARDEN-01`/`INTENT-02-CLEANUP-FLAGS-01`/`INTENT-02-CLEANUP-SUBMIT-01`/`INTENT-02-CLEANUP-COMMAND-01`：全部 REAL_OK。
-- A+B（命令结果自动输出 + 提示词能力对齐，任务 34/35/36）：**全部 REAL_OK**——含无编号回答纯函数兜底（会话 `20260814_113237` 验证："时间为10分钟"被接住并反馈"仍需补充：temperature"，"60摄氏度"补全"问题已解决"，听岔碎片不误判，回答不产生实验事件）。
+- A+B（任务 34/35/36）：**全部 REAL_OK**（会话 `20260814_113237` 验证兜底：无编号回答被接住并反馈"仍需补充"）。
+- 显示一致性修复：**AUTO_OK**（兜底显示字段跟随实际动作；"仍需补充：空"→"仍需确认"；468 项通过），待真实复验。
 - 最近真实会话：`20260814_113237`。
 - `INTENT-02-ASR-ROBUSTNESS-01` ASR 误识别鲁棒性评测：**REAL_OK（提前执行，用户直接要求，不改变 NAMING-01 的 P0 顺序）**。交付：`evaluation/narration_robustness/narration_plan.json`（28 段噪声口述语料，每段 spoken/observed 双文本+期望标注）、`src/evaluation/narration_robustness_plan.py`（严格 schema）、`tests/test_narration_robustness_plan.py`（21 项）、`scripts/evaluate_narration_robustness.py`（--mode deterministic/real）。确定性：零误触发 13/依赖 LLM 7/精确命中 5/已知限制 3。真实 DeepSeek 旁路（只读）：**21/28 一致、7 缺口**。
 - **重要：7 个缺口用户明确指示先不改代码、只记录**（已登记任务清单第 37 项 `ASR-ROBUSTNESS-RULE-GAPS-01`，每条含段号/输入/实际/期望/修复方向；详见该行与 LEARNING_REVIEW 最新条目）。

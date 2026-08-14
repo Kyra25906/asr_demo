@@ -1,6 +1,6 @@
 # asr_demo 项目任务清单
 
-最后更新：2026-08-14（无编号回答纯函数兜底 REAL_OK）
+最后更新：2026-08-14（显示一致性修复 AUTO_OK）
 
 > 本文件是当前任务、优先级和验收状态的唯一来源。架构说明、环境命令和下一会话摘要
 > 分别见 `PROJECT_ARCHITECTURE.md`、`ENVIRONMENT_SETUP.md` 和
@@ -804,6 +804,7 @@ Word/PDF 属于表现层增强，可以在系统 TTS 之后完成。
 | 2026-08-14 | 完成 A+B：命令结果自动输出 + 提示词能力对齐（AUTO_OK） | Python3.11 全量 433 项通过（+1 合同测试） | A：执行器 create reason 含问题文本、answer reason 含"仍需补充"、display_shadow_observation executed 时显示 reason（原被吞）；B：统一提示词补两条规则（疑似错词→确认、无编号回答单/多问题区分）+ 合同测试；未动麦克风/LLM | A+B 真实复验（无编号回答/追问自动显示/错词确认）→ `INTENT-02-CLEANUP-NAMING-01` |
 | 2026-08-14 | 完成无编号回答纯函数兜底（用户拍板"字段相关性+纯函数"） | Python3.11 全量 467 项通过（+11 兜底测试，其中 +1 防混） | 新增 `src/core/answer_fallback.py`：`extract_entity_fields`（温度/时间/体积/浓度确定性提取）+ `decide_unnumbered_answer`（单问题+短句+提取字段⊆缺失字段才判回答，夹带无关字段的实验记录绝不路由成回答）；main 弃权(no_action)时构造 ANSWER 动作交执行器；提示词规则收紧（"仅提供无关事实时保持原分类"）回应鲁棒性缺口⑤；合同测试更新；未动麦克风/LLM | 真实复验"时间为10分钟"被接住（单问题）→ 35 REAL_OK |
 | 2026-08-14 | 兜底真实复验升级 35 REAL_OK | 467 项通过 | 会话 20260814_113237（4 段）：段 3"时间为10分钟"→ abstention 被兜底接住为 answer（"已填 ['duration'] 仍需补充：temperature"）；段 4"60摄氏度"→"问题已解决"；段 2"分中"听岔碎片不误判；事件仅段 1（回答不产生实验事件）；计数"提交 1 段"、上下文 1、无剩余确认项（ASR 176 条 +4、事件 63 条 +1） | `INTENT-02-CLEANUP-NAMING-01` 改名（或用户定夺 GAPS-02 各项） |
+| 2026-08-14 | 完成显示一致性修复（用户指示"现在修"） | Python3.11 全量 468 项通过（+1 仍需确认测试） | ①兜底命中时 observation 的显示字段跟随实际动作（answer/clarification_context），不再出现"待确认动作=no_action 却已执行 answer"矛盾；②`_execute_answer` 的 resolved_note：字段补齐但确认未完成时输出"仍需确认"而非"仍需补充：空"；新增 AnswerConfirmationPendingTests；未动麦克风/LLM | 显示一致性真实复验（短会话）→ GAPS-02 项 E 结案 |
 | 2026-08-14 | A+B 真实验收升级 REAL_OK（34/35/36） | 433 项通过 | 会话 20260814_110116（13 段）：create 追问文本自动显示（段1/5/11）、answer 完整反馈（段10"问题已解决"）、confirm 反馈（段12）；错词确认生效（段11"一夜枪"→needs_confirmation=True"疑似ASR识别错误：'一夜枪'可能应为'移液枪'"→确认问题→段12"是的"→confirm）→ **确认记录首次真实落盘**；无编号回答段2"时间为10分钟"→abstention（安全未误判但未接住，部分达成）；计数"提交 4 段"、上下文 4 = 事件数（ASR 138 条 +13、事件 62 条 +4） | `INTENT-02-CLEANUP-NAMING-01` 改名 → VERIFY-01 |
 | 2026-08-14 | 用户要求提前执行 ASR 鲁棒性评测（INTENT-02-ASR-ROBUSTNESS-01 REAL_OK，只建评测体系与记录问题，不改代码） | Python3.11 全量 454 项通过（+21 语料测试） | 新增 28 段噪声口述语料 + 严格 schema + 21 项确定性断言（13 实验段零误触发；"看待确认问题"依赖 LLM 容错；"还有什么问题"精确命中；双回答/错编号/只有编号已知限制文档化）；确定性报告 零误触发13/依赖LLM 7/精确命中 5/已知限制 3；**真实 DeepSeek 旁路 21/28 一致、7 缺口**（只读，未写业务数据）；用户明确指示：**先不改代码，缺口记录待定案** | 登记 `ASR-ROBUSTNESS-RULE-GAPS-01`（7 缺口）→ 按用户决定与 NAMING-01 顺序推进 |
 

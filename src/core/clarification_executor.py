@@ -277,11 +277,16 @@ class ClarificationExecutor:
                 reason=str(error),
             )
 
-        resolved_note = (
-            " 问题已解决。"
-            if not updated.is_unresolved
-            else f" 仍需补充：{'、'.join(updated.missing_fields)}。"
-        )
+        if not updated.is_unresolved:
+            resolved_note = " 问题已解决。"
+        elif updated.missing_fields:
+            resolved_note = (
+                f" 仍需补充：{'、'.join(updated.missing_fields)}。"
+            )
+        else:
+            # 字段已补齐但确认尚未完成（requires_confirmation），
+            # 不能说"仍需补充：空"，应明确"仍需确认"。
+            resolved_note = " 仍需确认。"
         return self._result(
             action,
             state_changed=(updated != target),
