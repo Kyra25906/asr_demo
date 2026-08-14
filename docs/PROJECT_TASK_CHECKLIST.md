@@ -1,6 +1,6 @@
 # asr_demo 项目任务清单
 
-最后更新：2026-08-14（INTENT-02-CLEANUP-COMMAND-01 统一命令入口 REAL_OK）
+最后更新：2026-08-14（A+B 命令结果自动输出 + 提示词能力对齐 REAL_OK）
 
 > 本文件是当前任务、优先级和验收状态的唯一来源。架构说明、环境命令和下一会话摘要
 > 分别见 `PROJECT_ARCHITECTURE.md`、`ENVIRONMENT_SETUP.md` 和
@@ -45,10 +45,10 @@ TODO → DESIGN → CODED → AUTO_OK → REAL_OK
 
 ## 2. 当前测试基线
 
-- 当前全量自动测试：`432 tests OK`（Python 3.11.9，2026-08-14）
+- 当前全量自动测试：`433 tests OK`（Python 3.11.9，2026-08-14）
 - 环境验证：核心依赖和 `src.main` 导入成功；首次沙箱内失败已确认是执行权限误判，不是 `.venv` 损坏
-- 最近真实连续口述会话：`20260814_104104`
-- 最近真实会话已验证：统一命令入口闭环——20 段口述：查看显示多次生效（"当前没有待确认问题"/"当前共有 N 个待确认问题"），create 追问 3 次、answer 指定回答 3 次解决问题 1/2、计数"提交 6 段实验口述"、上下文 6 = 事件数、结束正常、剩余问题正确列出；确认记录真实路径未触发（无 needs_confirmation 场景，留待 VERIFY-01 补）
+- 最近真实连续口述会话：`20260814_110116`
+- 最近真实会话已验证：命令结果自动输出（create 追问文本/answer 反馈/confirm 反馈直接显示）；**错词确认生效**（"一夜枪"→"疑似ASR识别错误：'一夜枪'可能应为'移液枪'"→确认问题→"是的"→confirm）且**确认记录首次真实落盘**（experiment_confirmations.jsonl 第 1 行）；无编号回答"时间为10分钟"→ abstention（安全不再误当新事件，但未自动接住回答）；计数"提交 4 段"、上下文 4 = 事件数、剩余问题正确
 
 恢复工作时先运行：
 
@@ -135,7 +135,9 @@ QUERY-TYPES-01 + SAFETY-TYPES-01 + KNOWLEDGE-PROTOCOLS-01 （并行，纯类型�
 | 31 | `P2` | 安全、RAG、查询真实接入与 E2E | `TODO` | 见第 I.2 节 | PRESENT 与团队服务合同稳定后 |
 | 32 | `P1` | `INTENT-02-REVIEW-OUTPUT-01` 统一链 review 查看结果输出 | `TODO` | 新链识别到 review 动作时显示待确认列表或"没有待确认问题" | 真实会话 20260814_095506 暴露：ASR 误识别"看待确认问题"被统一链接住后只显示"第 N 段已保存"，无查看结果；`ClarificationExecutor` 的 REVIEW 分支只返回"只读动作"不携带列表；旧门卫的 `display_clarification_command_result` 只服务解析器精确匹配的说法；建议与 `INTENT-02-CLEANUP-COMMAND-01` 同步处理（删旧门卫时把查看显示职责搬进新链） |
 | 33 | `P1` | `INTENT-02-ASR-ROBUSTNESS-01` ASR 误识别鲁棒性评测 | `TODO` | 固定"噪声转写"集（真实误识别样例+同音变体）→ 统一链意图路由对照报告 | 用户提出（2026-08-14）：ASR 识别不准时检验新链容忍度。两层：①Fake LLM 确定性断言（review/experiment/abstention 路由正确）；②真实 DeepSeek 旁路报告（复用 evaluate_unified_dispatch_wav 模式，只读不写业务数据）。数据从真实会话误识别收集（095506 已有"看待确认问题/难有什么问题"），与 `INTENT-02-CLEANUP-VERIFY-01` 的"说歪了"验收场景衔接；清理完成后执行 |
-| 34 | `P1` | `UNIFIED-PROMPT-ASR-ERROR-CONFIRM-01` 统一Prompt补疑似ASR错词确认规则 | `TODO` | 实体疑似同音错词/识别错误时 needs_confirmation=true + confirmation_reason + 确认追问 | 用户观察（2026-08-14 会话 104104）："使用一夜枪取50微生缓冲液"未触发确认——统一提示词（unified_prompts.py）缺少旧链曾有的"疑似识别错误→需要确认"规则（历史事件有 confirmation_reason 证据），与 UNIFIED-PROMPT-MISSING-FIELDS-01 同款丢失；补规则 + 提示词合同测试 + 真实复验"移液枪/微升"场景；该场景触发 confirm 后可顺带补验 ConfirmationRecord 真实落盘（experiment_confirmations.jsonl） |
+| 34 | `P1` | `UNIFIED-PROMPT-ASR-ERROR-CONFIRM-01` 统一Prompt补疑似ASR错词确认规则 | `REAL_OK` | 实体疑似同音错词/识别错误时 needs_confirmation=true + confirmation_reason + 确认追问 | 统一提示词实验规则新增"实体疑似同音错词或ASR识别错误时设置needs_confirmation"；合同测试断言；全量 433 项通过。真实会话 `20260814_110116` 段 11："使用一夜枪取50微升缓冲液" → 事件 `needs_confirmation=True, reason="疑似ASR识别错误：'一夜枪'可能应为'移液枪'"` + 确认问题"您说的'一夜枪'是指移液枪吗？"；段 12"问题三，是的，是一夜枪。" → confirm 执行 → **确认记录首次真实落盘**（experiment_confirmations.jsonl 第 1 行） |
+| 35 | `P1` | `INTENT-02-ANSWER-UX-01` 回答体验：反馈补缺 + 无编号回答识别 | `REAL_OK` | ①answer 部分完成后明确提示"仍缺字段"；②仅一个待确认问题时无编号事实性短句判为对该问题的回答（多个时不得自动归属） | ①执行器 reason 含"仍需补充" ✅（真实反馈"已将对问题 1 的答复的实体字段…填入。问题已解决。"）；②统一提示词规则限定单/多问题（合同测试断言）；**真实复验部分达成**：段 2"时间为10分钟"→ abstention（安全：不再误当新事件；但未自动接住为回答，LLM 保守弃权，用户仍需说编号）——"不误判"已验证，"贴心接住"未实现，是否做 planner 侧确定性兜底留待决定 |
+| 36 | `P1` | `INTENT-02-QUESTION-AUTO-OUTPUT-01` 追问/回答结果自动输出 | `REAL_OK` | create 后自动显示追问文本；answer 后自动显示"已填 X 仍缺 Y"；不依赖用户手动"查看待确认问题" | ①执行器 create reason 含问题文本；②`display_shadow_observation` executed 时显示 reason；真实会话 `20260814_110116`：段 1/5/11 create 后直接显示"已创建待确认问题 N：…"、段 10 answer 完整反馈、段 12 confirm 反馈——均自动输出，无需手动查看 |
 
 ### 当前路线为什么这样排
 
@@ -794,6 +796,10 @@ Word/PDF 属于表现层增强，可以在系统 TTS 之后完成。
 | 2026-08-14 | 完成 INTENT-02-CLEANUP-COMMAND-01 统一命令入口（AUTO_OK） | Python3.11 全量 432 项通过（−4 门卫测试 +3 工厂测试） | 删三道门卫+补丁，统一链唯一命令路径；review 显示（REVIEW-OUTPUT-01）、确认记录持久化（from_executed_confirmation + find_clarification）、执行反馈搬进新链；删 test_confirmation_main.py；未动麦克风/LLM | `INTENT-02-CLEANUP-COMMAND-01` 真实会话验收 → `INTENT-02-CLEANUP-NAMING-01` |
 | 2026-08-14 | COMMAND-01 真实验收升级 REAL_OK | 432 项通过 | 会话 20260814_104104：20 段口述——查看显示多次生效、create 追问 3 次、answer 解决 2 问题、计数"提交 6 段"、上下文 6 = 事件数、剩余问题列出（ASR 125 条 +20、事件 58 条 +6）；确认记录真实路径未触发（无 needs_confirmation 场景），单测覆盖，VERIFY-01 补 | `INTENT-02-CLEANUP-NAMING-01` 去影子命名 |
 | 2026-08-14 | 用户观察"移液枪未被纠正"（登记 UNIFIED-PROMPT-ASR-ERROR-CONFIRM-01） | 未改代码 | 会话 104104 第 14 段"一夜枪/微生"未触发确认；统一提示词缺"疑似识别错误→needs_confirmation"规则（旧链有，历史 confirmation_reason 为证），与 MISSING-FIELDS 丢失同款；原文保留不受影响（ASR-02） | `UNIFIED-PROMPT-ASR-ERROR-CONFIRM-01` 补规则+测试+真实复验 |
+| 2026-08-14 | 用户观察"回答好几遍才 ANSWER 下来"（登记 INTENT-02-ANSWER-UX-01） | 未改代码 | 会话 104104："时间为10分钟"被当新实验事件而非回答；部分回答后无"仍缺字段"反馈（COMMAND-01 删门卫丢失旧话术），用户多次重复；两个子项：反馈补缺 + 无编号回答识别 | `INTENT-02-ANSWER-UX-01` 反馈话术 + 提示词规则 + 真实复验 |
+| 2026-08-14 | 用户观察"追问创建后不自动输出"（登记 INTENT-02-QUESTION-AUTO-OUTPUT-01） | 未改代码 | 会话 104104 第 3 段 create 后仅显示摘要、无问题文本；根因 display_coordinated_reply 随 SUBMIT-01 删除；最小显示现在补（并入命令结果显示收尾轮），完整消息管线留 PRESENT-INTEGRATE-01 | `INTENT-02-QUESTION-AUTO-OUTPUT-01` 最小显示 → PRESENT 统一管线 |
+| 2026-08-14 | 完成 A+B：命令结果自动输出 + 提示词能力对齐（AUTO_OK） | Python3.11 全量 433 项通过（+1 合同测试） | A：执行器 create reason 含问题文本、answer reason 含"仍需补充"、display_shadow_observation executed 时显示 reason（原被吞）；B：统一提示词补两条规则（疑似错词→确认、无编号回答单/多问题区分）+ 合同测试；未动麦克风/LLM | A+B 真实复验（无编号回答/追问自动显示/错词确认）→ `INTENT-02-CLEANUP-NAMING-01` |
+| 2026-08-14 | A+B 真实验收升级 REAL_OK（34/35/36） | 433 项通过 | 会话 20260814_110116（13 段）：create 追问文本自动显示（段1/5/11）、answer 完整反馈（段10"问题已解决"）、confirm 反馈（段12）；错词确认生效（段11"一夜枪"→needs_confirmation=True"疑似ASR识别错误：'一夜枪'可能应为'移液枪'"→确认问题→段12"是的"→confirm）→ **确认记录首次真实落盘**；无编号回答段2"时间为10分钟"→abstention（安全未误判但未接住，部分达成）；计数"提交 4 段"、上下文 4 = 事件数（ASR 138 条 +13、事件 62 条 +4） | `INTENT-02-CLEANUP-NAMING-01` 改名 → VERIFY-01 |
 
 ## 7. 每轮结束时必须更新
 

@@ -108,6 +108,8 @@ class CreateTests(unittest.TestCase):
         self.assertTrue(result.state_changed)
         self.assertEqual(result.affected_display_number, 1)
         self.assertIsNotNone(result.affected_clarification_id)
+        self.assertIn("已创建待确认问题 1", result.reason)
+        self.assertIn("加热到什么温度", result.reason)
 
         active = self.coordinator.active_clarifications()
         self.assertEqual(len(active), 1)
@@ -453,6 +455,8 @@ class AnswerTests(unittest.TestCase):
         updated = self.coordinator._find_clarification(target.clarification_id)
         self.assertEqual(updated.missing_fields, ("duration",))
         self.assertTrue(updated.is_unresolved)
+        self.assertIn("仍需补充", result.reason)
+        self.assertIn("duration", result.reason)
 
     def test_answer_with_extractor_resolves_completely(self):
         target = self.coordinator.current_clarification()

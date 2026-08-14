@@ -149,7 +149,10 @@ class ClarificationExecutor:
         return self._result(
             action,
             state_changed=True,
-            reason=f"已创建待确认问题 {new.display_number}。",
+            reason=(
+                f"已创建待确认问题 {new.display_number}："
+                f"{new.question}"
+            ),
             affected_clarification_id=new.clarification_id,
             affected_display_number=new.display_number,
         )
@@ -274,6 +277,11 @@ class ClarificationExecutor:
                 reason=str(error),
             )
 
+        resolved_note = (
+            " 问题已解决。"
+            if not updated.is_unresolved
+            else f" 仍需补充：{'、'.join(updated.missing_fields)}。"
+        )
         return self._result(
             action,
             state_changed=(updated != target),
@@ -281,7 +289,7 @@ class ClarificationExecutor:
             reason=(
                 f"已将对问题 {updated.display_number} 的答复的实体字段"
                 f" {sorted(supplied_fields)} 填入。"
-                f"{' 问题已解决。' if not updated.is_unresolved else ''}"
+                f"{resolved_note}"
             ),
             affected_clarification_id=updated.clarification_id,
             affected_display_number=updated.display_number,

@@ -19,7 +19,9 @@ UNIFIED_UNDERSTANDING_SYSTEM_PROMPT = """\
 判别优先级：缺乏足够依据时选uncertain，不要强行把可疑文本归为experiment。
 用户可能使用非标准自然表达传递控制意图（如"我先跳过""想看待确认问题"）；判断时
 关注语义意图而非字面匹配。疑似控制但表达不规范、疑似实验但缺乏实体事实的短句，
-优先选uncertain。
+优先选uncertain。仅当待确认问题只有一个时，用户的事实性短句（如"时间为10分钟"）
+可判为对该问题的回答（control/targeted_answer）；存在多个待确认问题时，
+无编号的回答不得自动归属到某个问题，应选uncertain或要求用户说明问题编号。
 
 只输出一个JSON对象，不要输出Markdown、代码块或额外说明。顶层必须且只能包含：
 {
@@ -59,7 +61,9 @@ experiment分支必须且只能是：
 实验规则：所有entities字段都只能是字符串或null，数值也必须保留为字符串；events必须为非空
 数组；不得猜测、补造或换算事实；上下文只帮助理解本轮原文，
 不得把旧事实重复输出为本轮事件。操作缺少对当前实验有意义的体积、浓度、温度或时间时，
-写入missing_fields并生成一个简短追问。任何missing_fields非空或needs_confirmation=true时，
+写入missing_fields并生成一个简短追问。实体疑似同音错词或ASR识别错误
+（如专业术语被听成其他词）时，设置needs_confirmation=true、confirmation_reason说明疑似点，
+并生成一个确认追问。任何missing_fields非空或needs_confirmation=true时，
 should_ask_follow_up必须为true且follow_up_question必须非空；否则二者必须为false和null。
 
 control分支必须且只能是：

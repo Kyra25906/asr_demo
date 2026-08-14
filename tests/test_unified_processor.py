@@ -66,6 +66,18 @@ class UnifiedPromptTests(unittest.TestCase):
         ):
             self.assertIn(required, prompt)
 
+    def test_system_prompt_keeps_answer_and_asr_error_rules(self):
+        prompt = UNIFIED_UNDERSTANDING_SYSTEM_PROMPT
+        for required in (
+            "仅当待确认问题只有一个",
+            "不得自动归属",
+            "targeted_answer",
+            "疑似同音错词",
+            "needs_confirmation=true",
+            "confirmation_reason",
+        ):
+            self.assertIn(required, prompt)
+
     def test_user_prompt_serializes_context_as_untrusted_data(self):
         prompt = build_unified_understanding_user_prompt(request())
         payload = json.loads(prompt.split("\n", 1)[1])
