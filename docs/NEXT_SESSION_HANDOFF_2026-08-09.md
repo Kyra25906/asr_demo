@@ -1,6 +1,6 @@
 # asr_demo 当前工作区交接说明
 
-最后整理：2026-08-13
+最后整理：2026-08-14
 
 > 本文件是下一会话的短入口，不保存完整历史。任务状态以
 > `PROJECT_TASK_CHECKLIST.md` 为准，架构原因见 `PROJECT_ARCHITECTURE.md`，
@@ -10,23 +10,26 @@
 
 - 正式解释器：Python 3.11.9，项目 `.venv` 可用。
 - 核心依赖和 `src.main` 导入成功；冷启动约 113 秒。
-- 全量自动测试：`Ran 428 tests in 1.047s — OK`。
-- 最近真实会话：`20260813_104732`，4 段口述验证证据优先提交（CREATE/ANSWER/REVIEW/结束），ASR 3 段 + 事件 1 段落盘。
+- 全量自动测试：`Ran 435 tests in 1.109s — OK`。
+- `MAIN-SESSION-CONTEXT-01` 统一链路上下文：**REAL_OK**（会话 `20260814_092200`：2 段口述，结束上下文计数 2 = 已落盘事件数；第 2 段 prompt_tokens 959→971 证明前文进入提示词；结束命令未进分段）。
+- 最近真实会话：`20260814_092200`。
 - 统一链已接管主要处理，但 main 仍保留 shadow flag、旧 submit 回退和旧命令门卫。
 - 工作区存在用户累计未提交修改；不得覆盖、回退或混入无关变更。
 
 ## 2. 当前唯一下一项
 
-`MAIN-SESSION-CONTEXT-01`：恢复统一链路上下文。
+`MAIN-RUNTIME-HARDEN-01`：运行边界整理。
 
-当前新链调用 observe 时未传 recent_context，事件落盘后也未更新 SessionContext。
-observe 应接收提交前的上下文；事件保存成功后 add_analysis。
-修复后第二段可看到第一段，结束上下文计数正确。
+1. 修正 `experiment_segment_count` 在确认实验分析前加一的问题（只统计 accepted experiment/degraded evidence）；
+2. 持续唤醒错误立即重试 → 区分暂时与不可恢复错误，增加退避和退出边界；
+3. 删除 Answer 执行器重复的 `if not supplied_fields` 分支。
+
+真实会话核验工具：`.\.venv\Scripts\python.exe -B -m scripts.verify_session_context <session_id>`（输出 ASR 段数、事件数、预期上下文计数）。
 
 ## 3. 后续固定顺序
 
 ```text
-MAIN-SESSION-CONTEXT-01
+MAIN-SESSION-CONTEXT-01（REAL_OK）
 → MAIN-RUNTIME-HARDEN-01
 → INTENT-02-CLEANUP-FLAGS/SUBMIT/COMMAND/NAMING/VERIFY
 → Query / Safety / Knowledge 类型合同
@@ -43,7 +46,7 @@ MAIN-SESSION-CONTEXT-01
 |---|---|---|
 | `P0` | execute flag 可在 observer 未创建时开启 | 配置层拒绝非法组合；清理阶段最终删除双 flag |
 | `P0` | `ClarificationExecutor` 可能先改协调器，main 后写 ASR | 统一采用 prepare → persist → commit |
-| `P0` | 新链调用 observe 时未传 `recent_context`，事件落盘后未更新 `SessionContext` | 读取提交前快照；事件保存成功后更新上下文 |
+| `P0` | 新链 observe 未传 `recent_context`、事件落盘后未更新 `SessionContext` | **已修（2026-08-14，REAL_OK）**：observe 传 `as_prompt_context()` 快照；事件落盘成功后 `add_analysis`；会话 20260814_092200 复验通过 |
 | `P1` | `experiment_segment_count` 在确认实验分析前加一 | 只统计 accepted experiment/degraded evidence |
 | `P1` | 持续唤醒错误立即重试 | 区分暂时与不可恢复错误，增加退避和退出边界 |
 | `P2` | Answer 执行器有重复 `if not supplied_fields` | 删除不可达重复分支 |
@@ -79,6 +82,12 @@ git diff --check
 
 下一次真实连续会话至少覆盖：实验、CREATE、ANSWER、REVIEW、DEFER、结束命令，
 并验证 ASR/事件证据顺序和最终 SessionContext 数量。
+
+`MAIN-SESSION-CONTEXT-01` 的专门复验标准：**已完成（2026-08-14，会话 20260814_092200）**
+- 至少 2 段普通实验口述（第二段依赖第一段内容，如"先加缓冲液"→"加热到六十度"）：✅ 2 段；
+- 结束时终端打印"最终上下文包含 N 条事件"，N 必须等于各段已落盘事件总数（修复前为 0）：✅ N=2=事件数；
+- 结束命令不进入分段；ASR/事件 JSONL 数量与显示一致：✅ 3 录音文件仅 2 条 ASR 记录；
+- 附加证据：第 2 段 prompt_tokens 959→971（cached 896 不变），前文上下文条目确实进入提示词。
 
 ## 7. 数据与 Git 边界
 

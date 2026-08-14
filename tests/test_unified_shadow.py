@@ -131,6 +131,32 @@ class UnifiedShadowObserverTests(unittest.TestCase):
         self.assertFalse(observation.executed)
         self.assertEqual(coordinator.active_clarifications(), before)
 
+    def test_observe_forwards_recent_context_to_bypass_input(self):
+        bypass = FakeBypass(result=Result())
+        UnifiedShadowObserver(bypass).observe(
+            request_id="shadow-session-1-segment-5",
+            session_id="session-1",
+            segment_id=5,
+            asr_result=asr(),
+            reply_coordinator=ReplyCoordinator(),
+            recent_context=("[operation] 加入缓冲液。",),
+        )
+        self.assertEqual(
+            bypass.inputs[0].recent_context,
+            ("[operation] 加入缓冲液。",),
+        )
+
+    def test_observe_recent_context_defaults_to_empty_tuple(self):
+        bypass = FakeBypass(result=Result())
+        UnifiedShadowObserver(bypass).observe(
+            request_id="shadow-session-1-segment-6",
+            session_id="session-1",
+            segment_id=6,
+            asr_result=asr(),
+            reply_coordinator=ReplyCoordinator(),
+        )
+        self.assertEqual(bypass.inputs[0].recent_context, ())
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -2751,3 +2751,28 @@ ASR 保存失败 → `continue`（跳过整段，不继续事件保存）。因�
 - **现有范例**：`ReplyCoordinator.prepare_confirmation` / `commit_confirmation` 早就是 prepare→commit 模式，`try_handle_confirmation_answer` 已把它串成"准备→保存 ASR→保存记录→提交"。本轮只是让新链（ClarificationExecutor 路径）对齐这个已有模式，而非新造一套。
 - **frozen dataclass 的不可变性**：ShadowObservation 是 frozen，不能直接改 executed 字段。用 `dataclasses.replace` 生成新实例，而不是违反不可变性去 setattr。
 - **验收证据**：全量 `Ran 428 tests in 1.047s — OK`，新增 1 项测试验证 observe 只规划不执行。
+
+## 2026-08-14：恢复统一链路上下文——把"断掉的上下文"接回主链
+
+- **问题**：统一新链每段口述都让 LLM"裸奔"——observe 调用不传 `recent_context`，事件落盘后也不更新 `SessionContext`。多段实验演示断链：第二段"接着刚才那个"接不上。根因不是缺少接口，而是 main 没接线：`UnifiedShadowObserver.observe` 和 `UnifiedAcceptanceBypassInput` 早已支持 `recent_context` 参数并一路透传到 `UnifiedUnderstandingInput`，提示词构造也读它——链路在组件层是通的，缺的只是编排层的两行。
+- **修复**：main 的 observe 调用前取 `session_context.as_prompt_context()` 快照传入；统一链路事件落盘成功后调用 `session_context.add_analysis(outcome.value)`（`outcome` 只物化一次，append 与 add_analysis 复用同一对象）。
+- **关键语义——上下文不包含"内存有但文件无"的事件**：与旧 SegmentProcessor 第 5 步一致，`add_analysis` 放在事件保存成功的 `else` 分支里。这样上下文永远只是"已落盘事实"的镜像，即使进程崩溃，重放文件也能重建出完全相同的上下文。
+- **快照时机**：observe 用调用前的快照（当前段尚未加入上下文），避免模型把本轮输入当作历史事件——这与旧链"先快照再调 LLM"是同一个原则。
+- **错误分级**：ASR 保存失败 → `continue` 跳过整段（原始证据不可丢）；事件保存失败 → 警告继续（事实已存，分析可降级）；上下文更新失败 → 警告继续（纯内存副作用，不影响已落盘事实）。
+- **为什么组件层测试就能覆盖大部分**：上下文链路是"数据透传"，每段透传都有独立测试位：observer 转发测试（FakeBypass 记录输入）、提示词断言（`payload["recent_context"]`）。main 的两行接线无法单测（入口函数不拆分），留待真实会话复验——这正好体现了项目的测试分层策略：组件可测、编排靠真实验收。
+- **验收证据**：全量 `Ran 430 tests in 1.240s — OK`（+2 项：observe 上下文透传默认值与传入值；+1 项提示词断言）。任务状态 `TODO → AUTO_OK`，待真实会话复验"第二段可看到第一段；结束上下文计数正确"。
+
+## 2026-08-14（工具知识）：界面"未分组"≠"没有工作区"
+
+- **现象**：GUI 侧边栏把当前对话显示在"未分组"，但对话明明工作区是 `C:\Users\dahli\Desktop\asr_demo`。
+- **真相**：侧边栏分组依据是"工作区注册表"（`C:\Users\dahli\.dsh\storages\workspace.json`）里每条记录的 `sessionIds` 挂靠列表，而不是会话的真实 cwd。asr_demo 记录 9:12 才创建，只挂靠了当时正在用的会话；8:50 开始的当前对话没有自动补挂，于是落入"未分组"。
+- **概念区分**：会话的 cwd（沙箱边界、文件操作范围）和工作区的"注册+分组"是两层东西。cwd 在会话创建时固定、决定我能读写什么；注册表只是 UI 归类的账本，改动它不影响权限。排查这类问题要分清"实际边界"与"展示层账本"，不要看到显示异常就以为功能坏了。
+
+## 2026-08-14：上下文真实验收通过——用 token 用量当证据
+
+- **会话**：`20260814_092200`，2 段口述（"加入5毫升缓冲液"→"加热到60摄氏度"），结束时终端打印 **"最终上下文包含 2 条事件"**。
+- **验收证据怎么取**：不靠肉眼——新增 `scripts/verify_session_context.py`（纯函数 `session_summary` + 5 项临时文件测试），从 `asr_segments.jsonl` / `experiment_events.jsonl` 按会话提取 ASR 段数、事件数、各段分布，与终端打印的 N 对照。文件计数：ASR 85 条（+2）、事件 46 条（+2）。
+- **最有意思的证据——读 LLM token 用量**：第 1 段 `prompt_tokens=959`，第 2 段 `prompt_tokens=971`，而 `cached_tokens` 都是 896（系统提示词+结构部分命中缓存，不变）。多出的 12 个 token 恰好是第 1 段事件形成的上下文条目。**"第二段可看到第一段"不需要猜，用量本身就证明了提示词变大了。** 这是"可观测性"思想的落地：在关键路径上留下可量化指标，验收时直接读数，而不是靠"感觉像对了"。
+- **结束命令不进入分段**：3 个录音 WAV（含结束命令那句）但该会话只有 2 条 ASR 记录——`is_end_session_command` 在写库前拦截，原始音频仍保留（证据），结构化记录不污染（事实边界）。
+- **验收流程本身**：用户按操作单跑程序口述 → 贴终端输出 → 我用数据文件独立核验 → 交叉一致才升级 REAL_OK。真实验收不是"跑一遍看看"，而是"跑一遍 + 独立取证 + 对照标准"。
+- **测试基线**：435 项通过（430 + 5 项核验工具测试）。任务状态 `AUTO_OK → REAL_OK`。

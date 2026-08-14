@@ -721,12 +721,18 @@ def run_experiment_session(
                 )
 
                 if shadow_observer is not None:
+                    # 调用前的上下文快照只包含此前已成功落盘的事件。
+                    # 当前段尚未加入上下文，避免模型把本轮输入当作历史。
+                    recent_context = (
+                        session_context.as_prompt_context()
+                    )
                     observation = shadow_observer.observe(
                         request_id=f"shadow-{session_id}-{segment_id}",
                         session_id=session_id,
                         segment_id=segment_id,
                         asr_result=asr_result,
                         reply_coordinator=reply_coordinator,
+                        recent_context=recent_context,
                     )
                     if not UNIFIED_SHADOW_EXECUTE_ENABLED:
                         display_shadow_observation(observation)
@@ -905,9 +911,14 @@ def run_experiment_session(
                         continue
 
                     if observation.accepted_analysis is not None:
+                        outcome = (
+                            observation
+                            .accepted_analysis
+                            .to_process_outcome()
+                        )
                         try:
                             segment_processor.event_store.append_analysis(
-                                observation.accepted_analysis.to_process_outcome()
+                                outcome
                             )
                         except Exception as error:
                             print(
@@ -918,6 +929,19 @@ def run_experiment_session(
                                 "ASR 原文已保存，"
                                 "系统将继续监听。\n"
                             )
+                        else:
+                            # 事件落盘成功后，才把分析事件加入内存上下文。
+                            # 与旧 SegmentProcessor 第 5 步语义一致：
+                            # 上下文不包含“内存有但文件无”的事件。
+                            try:
+                                session_context.add_analysis(
+                                    outcome.value
+                                )
+                            except Exception as error:
+                                print(
+                                    "\n上下文更新失败："
+                                    f"{type(error).__name__}: {error}"
+                                )
 
                     # commit：ASR 与事件证据都落盘成功后，
                     # 才执行状态变更。

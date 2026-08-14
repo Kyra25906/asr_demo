@@ -1,6 +1,6 @@
 # asr_demo 项目任务清单
 
-最后更新：2026-08-13（MAIN-EVIDENCE-COMMIT-01 证据优先提交）
+最后更新：2026-08-14（MAIN-SESSION-CONTEXT-01 恢复统一链路上下文 REAL_OK）
 
 > 本文件是当前任务、优先级和验收状态的唯一来源。架构说明、环境命令和下一会话摘要
 > 分别见 `PROJECT_ARCHITECTURE.md`、`ENVIRONMENT_SETUP.md` 和
@@ -45,10 +45,10 @@ TODO → DESIGN → CODED → AUTO_OK → REAL_OK
 
 ## 2. 当前测试基线
 
-- 当前全量自动测试：`428 tests OK`（Python 3.11.9，2026-08-13）
+- 当前全量自动测试：`435 tests OK`（Python 3.11.9，2026-08-14）
 - 环境验证：核心依赖和 `src.main` 导入成功；首次沙箱内失败已确认是执行权限误判，不是 `.venv` 损坏
-- 最近真实连续口述会话：`20260813_104732`
-- 最近真实会话已验证：证据优先提交（prepare→persist→commit）生效；CREATE 追问、ANSWER 解决、REVIEW 查看、结束命令均正常；ASR 记录 3 段、事件记录 1 段、零重复 LLM；结束命令未进入分段。
+- 最近真实连续口述会话：`20260814_092200`
+- 最近真实会话已验证：统一链路上下文接通——2 段实验口述，结束打印"最终上下文包含 2 条事件"（= 已落盘事件数）；第 2 段 prompt_tokens 959→971（cached 896 不变），证明前文进入提示词；结束命令未进入分段；新增 `scripts/verify_session_context.py` 按会话核验证据
 
 恢复工作时先运行：
 
@@ -62,13 +62,13 @@ cd C:\Users\dahli\Desktop\asr_demo
 
 ## 3. 当前唯一下一项
 
-> `MAIN-EVIDENCE-COMMIT-01` AUTO_OK。当前唯一下一项为 `MAIN-SESSION-CONTEXT-01`：恢复统一链路上下文。
+> `MAIN-EVIDENCE-COMMIT-01` AUTO_OK。`MAIN-SESSION-CONTEXT-01` REAL_OK。当前唯一下一项为 `MAIN-RUNTIME-HARDEN-01`：运行边界整理。
 
 当前 P0 顺序：
 
 ```text
-MAIN-EVIDENCE-COMMIT-01 AUTO_OK
-→ MAIN-SESSION-CONTEXT-01
+MAIN-SESSION-CONTEXT-01 REAL_OK
+→ MAIN-RUNTIME-HARDEN-01
 → INTENT-02 五步清理
 ```
 
@@ -119,7 +119,7 @@ QUERY-TYPES-01 + SAFETY-TYPES-01 + KNOWLEDGE-PROTOCOLS-01 （并行，纯类型�
 | 19 | `P0` | `ENV-RECOVERY-02` 验证正式 Python 3.11.9 环境 | `AUTO_OK` | 基础解释器和 `.venv` 均为3.11.9；核心依赖与 main 导入成功；422项通过 | 首次失败是沙箱执行权限误判；未重建环境 |
 | 20 | `P0` | `MAIN-FLAG-INVARIANT-01` 配置组合不变量 | `AUTO_OK` | 禁止 execute=true/enabled=false；补配置测试和 `.env.example` | config 新增 `validate_shadow_flags` 纯函数并在加载时 fail-fast；新增 5 项测试；427 项通过；非法组合不再可能读取未赋值的 `observation` |
 | 21 | `P0` | `MAIN-EVIDENCE-COMMIT-01` 澄清动作证据优先提交 | `REAL_OK` | 状态动作统一采用 prepare→persist→commit | observe 拆出 pending_action；main 编排 persist ASR/事件 → commit 状态；真实会话 20260813_104732：CREATE/ANSWER/REVIEW/结束正常，ASR 3 段 + 事件 1 段落盘，零重复 LLM；428 项通过 |
-| 22 | `P0` | `MAIN-SESSION-CONTEXT-01` 恢复统一链路上下文 | `TODO` | observe 接收提交前上下文；事件落盘成功后 add_analysis | 第二段可看到第一段；结束上下文计数正确 |
+| 22 | `P0` | `MAIN-SESSION-CONTEXT-01` 恢复统一链路上下文 | `REAL_OK` | observe 接收提交前上下文；事件落盘成功后 add_analysis | main 的 observe 调用传入 `session_context.as_prompt_context()`；事件落盘成功后 `add_analysis(outcome.value)`（与旧 SegmentProcessor 第5步语义一致：上下文不含"内存有但文件无"的事件）；新增 shadow 上下文透传 2 项测试 + 提示词 recent_context 断言 1 项；全量 435 项通过。真实会话 `20260814_092200`：2 段口述（"加入5毫升缓冲液"→"加热到60摄氏度"），结束打印"最终上下文包含 2 条事件"= 已落盘事件数；第 2 段 prompt_tokens 959→971、cached 896 不变，直接证明前文进入提示词；结束命令未进入分段（3 个录音文件仅 2 条 ASR 记录）；新增 `scripts/verify_session_context.py`（含 5 项测试）按会话核验 ASR/事件/上下文计数 |
 | 23 | `P1` | `MAIN-RUNTIME-HARDEN-01` 运行边界整理 | `TODO` | 修正实验段计数、持续唤醒错误退避、删除重复空字段分支 | 正常、边界和持续失败路径有专项测试 |
 | 24 | `P0` | `INTENT-02-CLEANUP-FLAGS-01` 去标志位 | `TODO` | 删除两个 shadow flag，新链成为唯一默认路径 | 在 main 三项一致性修复后执行 |
 | 25 | `P0` | `INTENT-02-CLEANUP-SUBMIT-01` 去旧 submit 分支 | `TODO` | 删除旧 submit、skip_ingest 和旧显示补丁 | 旧 SegmentProcessor LLM 路径从 main 消失 |
@@ -773,6 +773,8 @@ Word/PDF 属于表现层增强，可以在系统 TTS 之后完成。
 | 2026-08-13 | 完成 MAIN-FLAG-INVARIANT-01 配置组合不变量 | Python3.11 全量 427 项通过（+5 项配置测试） | config 新增 `validate_shadow_flags` 纯函数并在加载时 fail-fast 拒绝 execute=true/enabled=false；补 `.env.example` 的 `UNIFIED_SHADOW_EXECUTE_ENABLED` | `MAIN-EVIDENCE-COMMIT-01` 澄清动作证据优先提交 |
 | 2026-08-13 | 完成 MAIN-EVIDENCE-COMMIT-01 澄清动作证据优先提交 | Python3.11 全量 428 项通过（+1 项测试） | observe 拆出 `pending_action` 不再执行；main 编排 persist ASR/事件 → commit 状态；证据失败时 ReplyCoordinator 状态不变 | `MAIN-SESSION-CONTEXT-01` 恢复统一链路上下文 |
 | 2026-08-13 | MAIN-EVIDENCE-COMMIT-01 真实验收升级 REAL_OK | 428 项通过 | 会话 20260813_104732：4 段口述 CREATE✅ ANSWER✅ REVIEW✅ 结束✅；ASR 3 段 + 事件 1 段落盘、零重复 LLM；证据先于状态提交 | `MAIN-SESSION-CONTEXT-01` 恢复统一链路上下文 |
+| 2026-08-14 | 完成 MAIN-SESSION-CONTEXT-01 恢复统一链路上下文（AUTO_OK） | Python3.11 全量 430 项通过（+2 项） | main 的 observe 传入 `session_context.as_prompt_context()`；事件落盘成功后 `add_analysis(outcome.value)`；新增 shadow 上下文透传 2 项 + 提示词 recent_context 断言 1 项；未改配置、未动麦克风/LLM | `MAIN-SESSION-CONTEXT-01` 真实会话复验 → `MAIN-RUNTIME-HARDEN-01` |
+| 2026-08-14 | MAIN-SESSION-CONTEXT-01 真实验收升级 REAL_OK | 435 项通过（+5 项核验工具测试） | 会话 20260814_092200：2 段口述，结束打印"最终上下文包含 2 条事件"= 已落盘事件数；第 2 段 prompt_tokens 959→971、cached 896 不变证明前文进入提示词；结束命令未进入分段（3 录音文件仅 2 条 ASR 记录）；新增 `scripts/verify_session_context.py` 按会话核验证据 | `MAIN-RUNTIME-HARDEN-01` |
 
 ## 7. 每轮结束时必须更新
 

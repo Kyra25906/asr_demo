@@ -72,6 +72,10 @@ class UnifiedPromptTests(unittest.TestCase):
 
         self.assertEqual(payload["current_asr_raw_text"], RAW_TEXT)
         self.assertEqual(payload["pending_question_numbers"], [1, 2])
+        self.assertEqual(
+            payload["recent_context"],
+            ["刚才记录了离心步骤。"],
+        )
         self.assertNotIn("session_id", payload)
         self.assertNotIn("segment_id", payload)
 
