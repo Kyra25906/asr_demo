@@ -342,7 +342,7 @@ INTENT-02-CLEANUP-FLAGS-01 删除，统一链是唯一默认路径。
 | SUBMIT-01 | `create_experiment_llm_processor`（旧 ExperimentLLMProcessor） | 旧链调 LLM 做实验结构化 | 统一链 `UnifiedUnderstandingProcessor` 一次调用完成理解+结构化 |
 | SUBMIT-01 | `SegmentProcessor.process` / `SessionProcessingQueue.submit` | 旧链五步：ASR保存→LLM→事件保存→上下文更新（后台线程） | main 直接编排：ASR 落盘 → `event_store` 落盘 → `session_context.add_analysis`（prepare→persist→commit，主线程） |
 | SUBMIT-01 | `display_completed_segment(s)` / `display_segment_result` / `display_coordinated_reply` + `skip_ingest` 补丁 | 旧链显示后台完成结果并 ingest 进 ReplyCoordinator | `display_shadow_observation` 显示观察摘要；协调器交互由 `ClarificationExecutor` 负责 |
-| SUBMIT-01 | 外层 `try/finally` 队列收尾 | 会话结束等待后台任务完成 | 无后台任务，无需等待 |
+| SUBMIT-01 | 外层 `try/finally` 队列收尾 + 后台线程/队列/背压 | 会话结束等待后台任务完成；**并让用户说完继续说、连续口述不卡** | 无后台任务，但**非阻塞录音能力随之丢失**（见 5.4 表"非阻塞录音"行；RESTORE-NONBLOCK-01 待恢复） |
 | COMMAND-01 | `resolve_targeted_answer` 门卫（"问题 N，答案"） | 精确解析编号答复并路由 | 统一链 LLM 识别 answer 动作 + `AnswerEntityExtractor` 提实体 + executor 执行 |
 | COMMAND-01 | `try_handle_clarification_command` 门卫（查看/暂缓） | 精确命令处理+结果展示 | 统一链 review/defer 动作 + executor；查看显示由 `display_review_result` 承接（REVIEW-OUTPUT-01） |
 | COMMAND-01 | `try_handle_confirmation_answer` 门卫（"是的"） | prepare→写 ConfirmationRecord→commit | 统一链 confirm 动作 + executor；main 在状态变更成功后写 ConfirmationRecord（`from_executed_confirmation` 工厂） |
@@ -350,6 +350,51 @@ INTENT-02-CLEANUP-FLAGS-01 删除，统一链是唯一默认路径。
 | COMMAND-01 | `_new_chain_handled_answer` 补丁 | 防止新旧两条路重复处理 answer | 补丁本身是双轨产物；统一为单一路径后不需要 |
 | NAMING-01（待） | `shadow` 命名（observer/observation/显示） | —（纯命名） | 改为正式执行链命名，不改变行为 |
 | VERIFY-01（待） | 孤儿模块 `clarification_command_handler.py`、`targeted_clarification.py` | 已不被 main 调用 | 删除前确认其测试覆盖已由新链测试承接，再删模块+测试 |
+
+### 5.4 用户可见输出质量对照表（2026-08-14 建立，回应"没感觉新链路改善/功能丢了"）
+
+> 5.3 表追踪"动作是否迁移"；本表追踪**动作迁移后，用户看到的输出质量是否等价**。
+> 结论：业务逻辑（追问创建/回答填充/确认落盘/证据一致性）已迁移且更稳；
+> **用户可见输出质量整体降级**——这是"体验没改善、感觉功能丢了"的根因，
+> 也是 PRESENT-INTEGRATE-01 必须补的债。证据 = 会话 `20260814_174441` 走查输出。
+
+| 用户可见能力 | 旧链（清理前） | 新链（现状，证据=会话 20260814_174441） | 质量状态 |
+|---|---|---|---|
+| 非阻塞录音（说完继续说） | 后台线程+队列+背压（max_pending_tasks=4），连续口述不卡，真机验收"连续5段不卡" | 主循环同步串行：observe 调 LLM 期间麦关闭，说完干等（热2.6s/冷10.98s）；main.py 319-320 仍打印"无需等待 LLM 处理完成"（说谎） | **丢失**（且此前漏记恢复任务，见 RESTORE-NONBLOCK-01） |
+| 用户口述回显 | 显示识别文本 | "本段 ASR 识别完成：先加入防生缓冲液。" | 等价 ✓ |
+| 确认回执 | 协调回复（"已确认第1步"类用户语言） | "[统一链] 第6段：…已将对问题1的答复的实体字段['action','object']填入。 仍需确认。。" | **降级**（开发语言+双句号） |
+| 追问独立显示 | 协调器输出问题（"第2步离心多长时间？"） | 追问埋在"[统一链]…已创建待确认问题1：…"行内 | **降级**（被开发行淹没） |
+| 降级提示 | "原始记录已保存，结构化处理暂时不可用"（POLICY 第6节示例） | 无面向用户提示，只有"[统一链] 目标=degraded_note…" | **丢失** |
+| 查看待确认列表 | "当前没有待确认问题"/列表 | "当前共有1个待确认问题：-问题1（待回答）：…" | 等价 ✓ |
+| 结束汇总 | 会话总结（用户语言） | "共处理8段…提交4段" + "最终上下文包含4条事件" | **降级**（混入开发语言） |
+
+> **判定规则（写入验收纪律）**：迁移对照必须逐项标注质量状态（等价/降级/丢失），
+> "降级/丢失"项在 PRESENT 前视为未完成；agent 的"功能验收通过"不得掩盖"体验质量降级"。
+
+---
+
+### 5.5 命令处理政策现状（2026-08-14 建档，回应"LLM 兜底初心 vs 命令侧弃权"）
+
+> 证据三档：**精确命中**（命令表固定词）/ **本地语义**（前缀后缀规则）/ **LLM 识别**（模型判断）。
+> 核心结论：新路初心是"LLM 兜底"，但命令侧 LLM 兜底几乎全线堵死——7 类输入里只有"查看"真正放了 LLM 进来。
+
+| 输入 | 风险 | 可逆 | 精确命中 | 本地语义 | LLM 识别 | 最终去向 |
+|---|---|---|---|---|---|---|
+| 实验口述 NORMAL | 无 | — | — | — | **进实验** | EXPERIMENT_PIPELINE |
+| 查看 REVIEW_PENDING | 低 | ✓ | 复核上下文 | 复核上下文 | **复核上下文** ✅ | CLARIFICATION_CONTEXT |
+| **暂缓 DEFER_CURRENT** | 中 | ✓ | 复核上下文 | 复核上下文 | **弃权** ⚠️ | CONTEXT / ABSTENTION |
+| 确认 AFFIRM | 中 | ✗ | 复核上下文 | 弃权 | 弃权 | CONTEXT / ABSTENTION |
+| 否定 DENY | 中 | ✗ | 复核上下文 | 弃权 | 弃权 | CONTEXT / ABSTENTION |
+| 编号回答 TARGETED_ANSWER | 中 | ✗ | 复核上下文 | 弃权 | 弃权 | CONTEXT / ABSTENTION |
+| 结束 END_SESSION | 高 | ✗ | **直接执行** | 请求确认 | 请求确认 | EXECUTION / **CONFIRMATION（无下文）** ⚠️ |
+
+**三个问题点**：
+
+1. **暂缓（DEFER）——可逆操作被弃权，是 bug**。`DEFER` 标 `reversible=True`，但 `intent_policy.py` 写死"只有 LOCAL_SEMANTIC 才能放行"，LLM 识别的"我先跳过"落进弃权。`reversible=True` 是死的（待 `GAPS-FIX-DEFER-01` 接上）。
+2. **结束（END_SESSION）——请求确认了但没下文**。LLM 识别"今天先记录到这里吧"→ `REQUEST_CONFIRMATION` → 分派到 `END_SESSION_CONFIRMATION`，但 main 主循环不处理该目的地，既不追问也不在肯定后结束（待 `GAPS-FIX-END-01` 闭环）。
+3. **确认/否定/编号回答——LLM 识别全弃权，合理**。三者 `reversible=False`（不可逆：确认/否定/填入后状态难回退），LLM 判断不可逆操作宁可弃权要求精确或本地语义，保守但站得住，**不该放行**。
+
+**"LLM 兜底"当前真实覆盖范围**：实验口述 ✅ 一直兜底；查看 ✅ 放行；暂缓 ❌ 被误杀；结束 ⚠️ 半通不通；确认/否定/回答 ⛔ 弃权（合理）。修完 DEFER + 结束闭环后，命令侧从"1/6 通"变"3/6 通"。
 
 ---
 

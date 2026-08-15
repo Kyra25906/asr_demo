@@ -366,6 +366,45 @@
       "expected_missing_fields": [],
       "expected_needs_confirmation": false,
       "note": "结束：自然表达不在精确词表，依赖LLM识别end_session候选（中风险需二次确认，不改状态）。"
+    },
+    {
+      "segment_id": 29,
+      "challenge_type": "asr_noise_entity",
+      "spoken_text": "先加入五毫升缓冲液。",
+      "observed_asr_text": "先加入防生缓冲液。",
+      "pending_question_numbers": [],
+      "current_question_number": null,
+      "expected_input_kind": "experiment",
+      "expected_command": null,
+      "expected_missing_fields": [],
+      "expected_needs_confirmation": true,
+      "note": "ASR误识别-实体（真实会话20260814_174441，背景嘈杂）：'五毫升'被听成'防生'，应needs_confirmation=true并生成确认追问（该会话真实触发了确认问题'磷酸缓冲液还是仿生缓冲液'）。"
+    },
+    {
+      "segment_id": 30,
+      "challenge_type": "uncertain_semantics",
+      "spoken_text": "（环境噪声，无有效口述）",
+      "observed_asr_text": "제가.",
+      "pending_question_numbers": [],
+      "current_question_number": null,
+      "expected_input_kind": "uncertain",
+      "expected_command": null,
+      "expected_missing_fields": [],
+      "expected_needs_confirmation": false,
+      "note": "环境噪声（真实会话20260814_174441，背景嘈杂）：VAD把环境音当口述，ASR输出'제가.'，应安全弃权不产生实验事件（该会话真实行为为degraded_note弃权）。"
+    },
+    {
+      "segment_id": 31,
+      "challenge_type": "asr_truncated",
+      "spoken_text": "结束实验记录。",
+      "observed_asr_text": ".别束实验记录。",
+      "pending_question_numbers": [],
+      "current_question_number": null,
+      "expected_input_kind": "control",
+      "expected_command": "end_session",
+      "expected_missing_fields": [],
+      "expected_needs_confirmation": false,
+      "note": "句首截音+错词（真实会话20260814_174441）：'结束'→'.别束'，精确解析器不命中，期望ASR截音/后处理修复后能识别end_session（现状用户需重说，关联UX-05/UX-10）。"
     }
   ]
 }

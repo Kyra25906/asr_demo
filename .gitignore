@@ -36,3 +36,6 @@ models/**
 .idea/
 .DS_Store
 Thumbs.db
+
+# Generated artifacts (regenerable from tracked sources)
+*.docx

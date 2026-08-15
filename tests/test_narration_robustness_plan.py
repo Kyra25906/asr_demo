@@ -1,7 +1,7 @@
 """ASR鲁棒性口述语料的计划校验与确定性解析断言。
 
 覆盖两层：
-1. 语料计划schema：28段真实语料可加载，坏数据被严格拒绝；
+1. 语料计划schema：31段真实语料可加载，坏数据被严格拒绝；
 2. 确定性解析行为：精确命令解析器（零LLM快速路径）对每类噪声段的表现，
    把"必须依赖LLM容错"和"精确路径已知限制"文档化为断言。
 """
@@ -58,12 +58,12 @@ def make_segment(**overrides) -> NarrationSegment:
 
 
 class NarrationPlanSchemaTest(unittest.TestCase):
-    def test_real_plan_loads_with_28_segments(self) -> None:
+    def test_real_plan_loads_with_31_segments(self) -> None:
         plan = load_plan()
         self.assertEqual(plan.schema_version, 1)
-        self.assertEqual(len(plan.segments), 28)
+        self.assertEqual(len(plan.segments), 31)
         self.assertEqual(plan.segments[0].segment_id, 1)
-        self.assertEqual(plan.segments[-1].segment_id, 28)
+        self.assertEqual(plan.segments[-1].segment_id, 31)
         self.assertTrue(plan.scenario)
         self.assertTrue(plan.session_id)
 
@@ -187,7 +187,7 @@ class ExactParserRobustnessTest(unittest.TestCase):
             for segment in plan.segments
             if segment.expected_input_kind == "experiment"
         ]
-        self.assertEqual(len(experiment_segments), 13)
+        self.assertEqual(len(experiment_segments), 14)
         for segment in experiment_segments:
             with self.subTest(segment=segment.segment_id):
                 command = parse_exact(segment.observed_asr_text)
