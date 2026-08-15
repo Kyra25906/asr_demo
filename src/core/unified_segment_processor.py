@@ -204,6 +204,8 @@ class UnifiedSegmentProcessor:
         executed = False
         execution_reason = None
         executed_action_type = None
+        answer_remaining_fields: tuple[str, ...] = ()
+        answer_resolved = False
         if observation.pending_action is not None:
             try:
                 exec_result = self._executor.execute(
@@ -214,6 +216,8 @@ class UnifiedSegmentProcessor:
                 executed_action_type = (
                     observation.pending_action.action_type
                 )
+                answer_remaining_fields = exec_result.remaining_fields
+                answer_resolved = exec_result.resolved
             except Exception:
                 execution_reason = "执行器内部异常"
 
@@ -266,6 +270,8 @@ class UnifiedSegmentProcessor:
             observation,
             executed=executed,
             execution_reason=execution_reason,
+            answer_remaining_fields=answer_remaining_fields,
+            answer_resolved=answer_resolved,
         )
 
         outcome = SegmentOutcome(

@@ -90,6 +90,8 @@ class ClarificationExecutionResult:
     affected_clarification_id: str | None = None
     affected_display_number: int | None = None
     answer_text_received: bool = False
+    remaining_fields: tuple[str, ...] = ()
+    resolved: bool = False
 
 
 class ClarificationExecutor:
@@ -279,14 +281,20 @@ class ClarificationExecutor:
 
         if not updated.is_unresolved:
             resolved_note = " 问题已解决。"
+            resolved = True
+            remaining_fields: tuple[str, ...] = ()
         elif updated.missing_fields:
             resolved_note = (
                 f" 仍需补充：{'、'.join(updated.missing_fields)}。"
             )
+            resolved = False
+            remaining_fields = tuple(updated.missing_fields)
         else:
             # 字段已补齐但确认尚未完成（requires_confirmation），
             # 不能说"仍需补充：空"，应明确"仍需确认"。
             resolved_note = " 仍需确认。"
+            resolved = False
+            remaining_fields = ()
         return self._result(
             action,
             state_changed=(updated != target),
@@ -298,6 +306,8 @@ class ClarificationExecutor:
             ),
             affected_clarification_id=updated.clarification_id,
             affected_display_number=updated.display_number,
+            remaining_fields=remaining_fields,
+            resolved=resolved,
         )
 
     def _validate_action(self, action: ClarificationAction) -> None:
@@ -320,6 +330,8 @@ class ClarificationExecutor:
         affected_clarification_id: str | None = None,
         affected_display_number: int | None = None,
         answer_text_received: bool = False,
+        remaining_fields: tuple[str, ...] = (),
+        resolved: bool = False,
     ) -> ClarificationExecutionResult:
         return ClarificationExecutionResult(
             request_id=action.request_id,
@@ -331,4 +343,6 @@ class ClarificationExecutor:
             affected_clarification_id=affected_clarification_id,
             affected_display_number=affected_display_number,
             answer_text_received=answer_text_received,
+            remaining_fields=remaining_fields,
+            resolved=resolved,
         )

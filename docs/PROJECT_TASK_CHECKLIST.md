@@ -71,7 +71,7 @@ TODO → DESIGN → CODED → AUTO_OK → REAL_OK
 
 ## 2. 当前测试基线
 
-- 当前全量自动测试：`490 tests OK`（Python 3.11.9，2026-08-15，含 GAPS 修复 + defer_targeted + 降级提示）
+- 当前全量自动测试：`544 tests OK`（Python 3.11.9，2026-08-16，含 GAPS 修复 + PRESENT 子步 A 全部 A-1/A-2a/A-2b/A-3/A-4）
 - 环境验证：核心依赖和 `src.main` 导入成功；首次沙箱内失败已确认是执行权限误判，不是 `.venv` 损坏
 - 最近真实连续口述会话：`20260814_113958`
 - 最近真实会话已验证：显示一致性——第 2 段"时间为10分钟"被兜底接住且显示自洽（"目标=clarification_context，待确认动作=answer；已执行：已将对问题 1 的答复的实体字段 ['duration'] 填入。仍需补充：temperature。"，不再是 no_action 矛盾）；追问自动显示、计数"提交 1 段"、上下文 1、剩余问题列出
@@ -560,7 +560,7 @@ A负责提供稳定消息协议和Mock数据，不应让前端直接读取 `main
 | `PRESENT-07` | `P1` | 指定编号答复完成后的明确状态回执 | `TODO` | CLARIFY-TARGET-01已能正确路由，但后台完成后暂未直接显示“问题N已解决/仍缺少哪些字段”；当前可用回看命令核验 |
 | `PRESENT-05` | `P1` | 用户输出与 debug 日志分离 | `TODO` | 状态、路径、token、耗时默认不展示/不朗读 |
 | `PRESENT-06` | `P1` | 输出顺序真实验收 | `TODO` | 先确认回执，再在后续安全间隙提出新问题 |
-| `PRESENT-INTEGRATE-01` | `P1` | 将一种待确认结果接入统一消息链路 | `TODO` | ASR命令基线后、TTS前实施；先做PendingClarification→PresentationMessage→简单终端Presenter，不一次迁移全部print |
+| `PRESENT-INTEGRATE-01` | `P1` | 建立会话级呈现系统与单一输出权 | `AUTO_OK` | v2 设计已确认；A-1 不可变 `PresentationIntent`；A-2a 记录回执文案目录；A-2b 追问/回答/确认/暂缓文案 + 字段名中文化（修 UX-07）；A-3 `TerminalRenderer`（封装 ui_mode + review 多行文案）；A-4 投影层（业务事实→Intent，补 answer 结构化字段）。**子步 A 全部完成**。专项 projection 13 + copy 29 + renderer 5 + intent 7、正式全量 544 项通过。尚未接 main 或 Coordinator；下一小步 **子步 B**（Coordinator + pump + 接线 + 真实验收）。子步 B 完成标准（单一输出入口/后台不直显/旧 print 已删/无新旧开关/测试绿/真机无退化）见 PRESENT_DESIGN.md §10。 |
 | `PRESENT-STYLE-01` | `P2` | 分离消息语义语调与具体前端/TTS样式 | `DESIGN` | 消息只表达kind/priority/channel/speech policy及可选抽象语调；颜色布局、音色、语速和具体情感参数由适配器决定 |
 
 ### H3. 系统故障与实验安全
@@ -859,6 +859,11 @@ Word/PDF 属于表现层增强，可以在系统 TTS 之后完成。
 | 2026-08-15 | RESTORE-NONBLOCK-01 恢复非阻塞录音 + 拆两句谎话（REAL_OK） | Python3.11 全量 483 项通过（+8 队列 +6 工人 +1 集成） | 真实会话 20260815_094954（连说 10 段不卡）：非阻塞实锤（每段 [LLM响应] 插空出现在下一段录音期间）；计数正确（共10段/提交8段/上下文8=事件数）；结束命令不入段；无崩溃；两句谎话已拆（111→"ASR 原文已保存"，320 现为真）。体验：用户接受当前"结果延后显示"节奏，前瞻要求 TTS 不乱序朗读（登记 TIMING-02） | `GAPS-FIX-END-01`（结束语追问确认） |
 | 2026-08-15 | 三个硬 GAPS + TIMING-01（REAL_OK/AUTO_OK） | Python3.11 全量 488 项通过（+1 结束确认旁路 +1 defer 生命周期 +1 暂缓 current +1 紧邻） | 会话 111049：END 确认通过（"今天先记录到这里吧"→"是否结束？"→"是"→结束）；会话 112341：DEFER 通过（"这个问题先跳过"→"defer 操作完成"→查看"已暂缓"），真实验收抓出"register_clarification 不设 current"根因并修复；ADJACENCY 单测覆盖；TIMING-01 结果算完当场显示 | `GAPS-REVERIFY-01`（兜底+各缺口复测）或继续软问题 |
 | 2026-08-15 | GAPS-REVERIFY-01 + defer_targeted + 降级提示（REAL_OK） | Python3.11 全量 490 项通过（+1 解析器 +1 旁路） | 真实旁路 21/31 一致（③PH/⑤电流/D结束语已闭环，②同音错词走ASR层）；真实会话 115134：E/③/D 三验证点全闭环；defer_targeted 按编号暂缓补完；降级人话提示补上；**发现"是"单字易被ASR听成"Sure."，结束确认提示改为引导说"是的"** | 硬问题清零，进 PRESENT |
+| 2026-08-15 | PRESENT 子步 A-1：定义不可变 PresentationIntent（AUTO_OK） | 新增 7 项专项并全部通过；正式 `.venv` 全量 497 项通过 | 新合同不含最终文案和可变 status；复制并只读封装 args；拒绝 DEBUG 混入及非法 id/段号/参数键；未接 main，用户输出零变化，跳过 UX 走查。首次在受限环境启动失败被误判为环境损坏，正常权限复核证明环境无问题 | 下一小步单独做文案目录，仍不接 main |
+| 2026-08-15 | PRESENT 子步 A-2a：记录回执文案目录（AUTO_OK） | 新增 9 项专项；正式 `.venv` 全量 506 项通过 | 新增 user/admin 文案；recorded/degraded/failed 三结果严格区分，修正原设计中两个 `degraded=true` 无法区分失败与降级的歧义；非法模式、缺失/未知结果、非法步骤号和错误 kind 均拒绝。未接 main，用户输出零变化，跳过 UX 走查 | 下一小步扩展追问/回答文案，仍不接 main |
+| 2026-08-16 | PRESENT 子步 A-2b：追问/回答/确认/暂缓文案 + 字段名中文化（AUTO_OK） | 专项 31 项（copy 24 + intent 7）全部通过；正式 `.venv` 全量 521 项通过（+15） | `copy_for_intent` 扩展 CLARIFICATION（追问独立成句，修 UX-02）、CONFIRMATION_ACK（ANSWERED 三态 已解决/仍需补充/仍需确认 + CONFIRMED）、CLARIFICATION_DEFERRED（暂缓）；新增字段名→中文术语表（temperature→温度 等 10 项，修 UX-07 开发语言泄漏）；追问不加句号、回执统一加句号（去双句号，修 UX-06）；未知字段名保留原样兜底。未接 main，用户输出零变化，跳过 UX 走查。REVIEW 列表文案留到 renderer（多行布局属 renderer 职责，现状已友好） | 下一小步 TerminalRenderer（A-3） |
+| 2026-08-16 | PRESENT 子步 A-3：TerminalRenderer + review 文案（AUTO_OK） | 专项 41 项（copy 29 + renderer 5 + intent 7）全部通过；正式 `.venv` 全量 531 项通过（+10） | 新增 `TerminalRenderer`（封装 ui_mode，提供 Intent→终端文本唯一转换点，是子步 B 单一输出入口的前置接缝）；文案目录补 CLARIFICATION_REVIEW（`ReviewItem` + 多行列表，复用现有友好文案"当前共有 N 个待确认问题：- 问题 N（待回答/已暂缓）：…"）；review 列表不区分 user/admin（列表本身就是定位信息）。未接 main，用户输出零变化，跳过 UX 走查 | 下一小步投影层（业务事实→Intent 纯函数） |
+| 2026-08-16 | PRESENT 子步 A-4：投影层 + answer 结构化字段（AUTO_OK） | 专项 57 项（projection 13 + executor + processor + observer）全部通过；正式 `.venv` 全量 544 项通过（+13） | 新增 `presentation_projection.py`（`messages_for_observation` + `messages_for_review`，业务事实→Intent 纯函数）；前置补 answer 结构化字段：`ClarificationExecutionResult` 加 `remaining_fields`/`resolved`、`UnifiedObservation` 加 `answer_remaining_fields`/`answer_resolved`、`unified_segment_processor` 透传——修掉"剩余字段散在 reason 字符串"的缺口，投影层不再解析中文。未接 main，用户输出零变化，跳过 UX 走查。**子步 A 全部完成** | 下一小步子步 B（Coordinator + pump + 接线 + 真实验收） |
 
 ## 7. 每轮结束时必须更新
 

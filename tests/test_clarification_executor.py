@@ -457,6 +457,8 @@ class AnswerTests(unittest.TestCase):
         self.assertTrue(updated.is_unresolved)
         self.assertIn("仍需补充", result.reason)
         self.assertIn("duration", result.reason)
+        self.assertEqual(result.remaining_fields, ("duration",))
+        self.assertFalse(result.resolved)
 
     def test_answer_with_extractor_resolves_completely(self):
         target = self.coordinator.current_clarification()
@@ -478,6 +480,8 @@ class AnswerTests(unittest.TestCase):
 
         self.assertTrue(result.state_changed)
         self.assertIn("问题已解决", result.reason)
+        self.assertTrue(result.resolved)
+        self.assertEqual(result.remaining_fields, ())
 
         updated = self.coordinator._find_clarification(target.clarification_id)
         self.assertFalse(updated.is_unresolved)
@@ -558,6 +562,8 @@ class AnswerConfirmationPendingTests(unittest.TestCase):
         self.assertTrue(result.state_changed)
         self.assertIn("仍需确认", result.reason)
         self.assertNotIn("仍需补充：", result.reason)
+        self.assertFalse(result.resolved)
+        self.assertEqual(result.remaining_fields, ())
         updated = self.coordinator._find_clarification(target.clarification_id)
         self.assertTrue(updated.is_unresolved)
         self.assertEqual(updated.missing_fields, ())

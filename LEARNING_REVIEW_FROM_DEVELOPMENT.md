@@ -3014,3 +3014,121 @@ ASR 保存失败 → `continue`（跳过整段，不继续事件保存）。因�
   - 专业术语：极短指令脆弱性（Ultra-short Utterance Fragility）、语音确认词设计（Wake/Confirmation Word Design）。
   - 项目实际体现：结束确认提示从"请说'是'或'不是'"改为"请说'是的'或'不是'"；根治走 ASR 层（AUDIO-PREROLL 截音 + 短指令处理）。
 - **测试基线**：全量 490 项通过。硬问题清零，进 PRESENT。
+
+## 2026-08-15（PRESENT 子步 A-1）：先定义“想表达什么”
+
+- **本轮做了什么**：新增 `src/core/presentation_intent.py`，只定义不可变的
+  `PresentationIntent`；新增 `tests/test_presentation_intent.py` 的 7 项合同测试。
+  没有接 `main.py`，没有替换任何 `print()`，也没有新增文案、Renderer 或 Coordinator。
+
+- **知识点一：语义与文案分离**。
+  - 白话解释：业务模块只填写“问题 2 已解决”这张信息单，不自己决定最后说
+    “已确认问题 2”还是管理员版的详细话。这样换说法时不会碰业务判断。
+  - 专业术语：语义意图（Semantic Intent）与表现形式分离（Separation of Content and Presentation）。
+  - 项目实际体现：`PresentationIntent` 只有 `kind + args`，故意没有 `text` 字段；最终中文留给下一小步的文案目录。
+
+- **知识点二：真正的不可变不只是 frozen=True**。
+  - 白话解释：把盒子封死还不够；如果盒子里的字典仍能改，别人仍可偷偷把“步骤 3”改成“步骤 9”。
+  - 专业术语：浅不可变（Shallow Immutability）与防御性复制（Defensive Copy）。
+  - 项目实际体现：构造时先复制 `args`，再用只读映射包住；测试同时验证外部原字典修改不影响 Intent，并且不能通过 `intent.args[...]` 修改。
+
+- **知识点三：工具受限不能推断成用户环境损坏**。
+  - 白话解释：门禁没有放行，不等于房间里的机器坏了。测试命令在受限环境中无法启动时，必须先用正常权限复核，不能直接让用户“修环境”。
+  - 专业术语：执行环境隔离（Execution Environment Isolation）与误诊（Misdiagnosis）。
+  - 项目实际体现：同一条 `.venv` 全量命令在受限环境中报无法创建进程；改在正常权限下执行后，正式全量 `Ran 497 tests — OK`。此前“Python 3.11 不存在、环境需恢复”的判断错误，已从任务清单和交接文档撤回。
+
+- **体验边界**：本轮没有接主流程，没有用户可见输出或交互变化，按规则跳过九维 UX 走查。
+- **测试基线**：专项 7/7 通过；新旧呈现合同合跑 17/17 通过；正式 `.venv` 全量 497 项通过。本小步为 AUTO_OK。
+- **下一步原因**：单独做文案目录，把“事实”翻译成 user/admin 两套文字；仍不接 main，继续保持每层独立验证。
+
+## 2026-08-15（PRESENT 子步 A-2a）：记录回执的第一块文案目录
+
+- **本轮做了什么**：新增 `src/core/presentation_copy.py`，第一步只翻译
+  `RECORD_ACK`；覆盖正常记录、降级保存、处理失败三种结果，以及 user/admin 两种模式。
+  新增 `tests/test_presentation_copy.py` 的 9 项测试。未接 main，没有替换任何旧输出。
+
+- **知识点一：同一个布尔值不能表达三个业务状态**。
+  - 白话解释：只有“是/否”两个格子的表，装不下“成功/降级/失败”三种答案。硬塞进去，后面的人就不知道该说哪句话。
+  - 专业术语：状态建模（State Modeling）与信息丢失（Information Loss）。
+  - 项目实际体现：原设计把降级和失败都写成 `degraded=true`；本轮改成 `RecordAckResult.RECORDED/DEGRADED/FAILED`，文案才能一一对应。
+
+- **知识点二：文案目录不是随便拼字符串**。
+  - 白话解释：文案目录像固定话术手册，先核对信息单是否完整，再选准确句子；不能缺了步骤编号还猜一句“已记录”。
+  - 专业术语：集中式文案目录（Centralized Copy Catalog）与快速失败（Fail Fast）。
+  - 项目实际体现：记录成功必须带正整数 `step_number`；缺结果、未知结果、错误类型和非法 UI 模式都立即抛出明确错误。
+
+- **知识点三：用户信息和管理员定位信息分层**。
+  - 白话解释：用户只需要知道“步骤 3 已记录”；管理员排查时还需要知道它来自第 4 次口述。两者说的是同一件事，但信息密度不同。
+  - 专业术语：受众适配（Audience-specific Presentation）。
+  - 项目实际体现：user 文案为“已记录实验步骤 3。”；admin 文案追加“来源口述 4”，但不改变业务事实。
+
+- **验收与体验边界**：专项 9/9、正式全量 506/506 通过。本轮未接主流程，无用户可见变化，按规则跳过九维 UX 走查。
+- **下一步原因**：继续扩展追问和回答回执文案，先把最容易出现双句号、问题编号和剩余字段的部分独立测稳；仍不接 main。
+
+## 2026-08-16（PRESENT 子步 A-2b）：追问/回答/确认/暂缓文案 + 字段名中文化
+
+- **本轮做了什么**：`copy_for_intent` 从只支持记录回执，扩展到追问（`CLARIFICATION`）、
+  回答/确认回执（`CONFIRMATION_ACK`）、暂缓（`CLARIFICATION_DEFERRED`）；新增字段名→中文
+  术语表。专项 31/31、正式全量 521/521 通过。未接 main。
+
+- **知识点一：字段名中文化（术语映射）**。
+  - 白话解释：机器内部记的是 `temperature` 这种英文代号，用户要听的是“温度”。直接把这代号印上屏幕，用户会看到“仍需补充：temperature”这种半洋半中的话。
+  - 专业术语：术语映射（Terminology Mapping）、展示层本地化（Presentation Localization）。
+  - 项目实际体现：`presentation_copy.py` 的 `_FIELD_LABELS` 字典把 10 个实体字段名映射成中文，`"仍需补充：temperature、duration"` 变成 `"仍需补充：温度、时间"`。
+
+- **知识点二：三态结果不能用布尔表达**。
+  - 白话解释：回答一个问题后有三种结局——全答完了、还差几个字段、字段齐了但还要你再确认。这三种装不进“是/否”两个格子。
+  - 专业术语：枚举（Enum）表达封闭状态集合，布尔标志（Boolean Flag）只表达二态。
+  - 项目实际体现：`ANSWERED` 回执用 `remaining_fields`（是否还有剩余字段）+ `resolved`（是否已解决）区分“仍需补充 / 问题已解决 / 仍需确认”三态；若只用“还有字段吗”一个布尔，就分不开“已解决”和“仍需确认”（两者字段都为空）。
+
+- **知识点三：标点归属要统一，否则出双句号**。
+  - 白话解释：追问文本来自大模型，它自己已带问号结尾；拼接时再补句号，就变成“？。”。规矩是：谁带来的标点谁负责，拼接方不重复加。
+  - 专业术语：标点规范化（Punctuation Normalization）、单一来源避免重复拼接。
+  - 项目实际体现：追问（`CLARIFICATION`）不加句号（`question` 自带标点），自造短句（回执/暂缓）统一由 `_with_source` 加句号——正是“填入。仍需补充：X。”双句号的根因，现在从源头统一。
+
+- **验收与体验边界**：专项 31/31、正式全量 521/521 通过。本轮未接主流程，无用户可见变化，按规则跳过九维 UX 走查。
+- **下一步原因**：做 `TerminalRenderer`，把 user/admin 分流的渲染逻辑独立出来；仍不接 main。
+
+## 2026-08-16（PRESENT 子步 A-3）：TerminalRenderer + review 文案
+
+- **本轮做了什么**：新增 `TerminalRenderer`（封装 ui_mode + `render`），文案目录补 review 多行文案。专项 41/41、正式全量 531/531 通过。未接 main。
+
+- **知识点一：渲染器是"唯一转换点"，不是"又一堆打印"**。
+  - 白话解释：让所有"把消息变成屏幕文字"的动作都从一扇门走；将来换网页、换语音播报，只要换这扇门后面的实现，前面调用的人不用改。
+  - 专业术语：单一渲染点（Single Rendering Point）、渲染器抽象（Renderer Abstraction）。
+  - 项目实际体现：`TerminalRenderer.render` 是 Intent→终端文本的唯一入口，封装 ui_mode；未来的 pump 只依赖它，不依赖文案目录。
+
+- **知识点二：薄层也有价值——封装配置**。
+  - 白话解释：renderer 现在只是"把 ui_mode 记下来、调一下文案目录"，看起来没干什么；但它的价值是把"用哪个模式显示"藏起来，调用方不用每次传 ui_mode。
+  - 专业术语：封装配置（Encapsulate Configuration）、信息隐藏（Information Hiding）。
+  - 项目实际体现：pump 将来只调 `renderer.render(intent)`，不关心 ui_mode；ui_mode 是 renderer 的构造参数。
+
+- **知识点三：列表文案的"多行"是内容，不是布局**。
+  - 白话解释：查看待确认列表，用户看到的"标题 + 三行问题"就是一整句话，里面的换行是这句话的一部分；渲染器该管的是"这条消息和上一条消息之间空几行"这种真正的外层排版，而不是拆开列表。
+  - 专业术语：内容（Content）与布局（Layout）的边界；字符串内换行 vs 消息间排版。
+  - 项目实际体现：`copy_for_intent` 对 review 返回含 `\n` 的完整列表文本；renderer 不拆 review，只整体返回。
+
+- **验收与体验边界**：专项 41/41、正式全量 531/531 通过。本轮未接主流程，无用户可见变化，按规则跳过九维 UX 走查。
+- **下一步原因**：做投影层（业务事实→Intent 纯函数），把 `UnifiedObservation` 翻译成 Intent；这是子步 B 接线前最后一块纯函数。
+
+## 2026-08-16（PRESENT 子步 A-4）：投影层 + answer 结构化字段
+
+- **本轮做了什么**：新增 `presentation_projection.py`（`messages_for_observation` + `messages_for_review`）；前置补 answer 结构化字段（`remaining_fields`/`resolved` 透传到观察摘要）。专项 57、正式全量 544/544 通过。未接 main。**子步 A 全部完成。**
+
+- **知识点一：投影层是"翻译器"，不是"说话人"**。
+  - 白话解释：投影层只把"机器内部发生了什么"翻译成"一句话想表达什么"，不决定最后那句中文；中文留给文案目录。这样业务层只说事实，展示层决定说法。
+  - 专业术语：投影（Projection）／语义意图映射（Semantic Intent Mapping）。
+  - 项目实际体现：`messages_for_observation` 读 `UnifiedObservation` 产出 `PresentationIntent`（kind+args），不产中文、不打印。
+
+- **知识点二：数据缺口要补在源头，不在下游解析**。
+  - 白话解释：answer 的"还剩哪些字段"本来算出来了，却只塞进一句中文 reason 里；下游要拿到它，只能去拆中文。正确做法是在产生它的地方（执行结果）就单独留一个字段。
+  - 专业术语：结构化数据向下游传递（Structured Data Flow）／避免解析自然语言（Avoid Parsing Natural Language）。
+  - 项目实际体现：给 `ClarificationExecutionResult` 加 `remaining_fields`/`resolved`，透传到 `UnifiedObservation`，投影层直接读字段，不再拆 reason 中文。
+
+- **知识点三：投影层是纯函数，输入决定输出**。
+  - 白话解释：同一个 observation，永远投影出同一组 Intent；它不读可变状态、不写盘、不打印，所以可以放心地单独测。
+  - 专业术语：纯函数（Pure Function）、引用透明（Referential Transparency）。
+  - 项目实际体现：`messages_for_observation`/`messages_for_review` 无副作用，13 项测试直接构造 observation 断言产物。
+
+- **验收与体验边界**：专项 57/57、正式全量 544/544 通过。本轮未接主流程，无用户可见变化，按规则跳过九维 UX 走查。
+- **下一步原因**：进入子步 B——Coordinator + presentation pump + 接 main + 删旧 print + 真实验收；B 是动真实设备的阶段，需用户授权数据外发并做九维走查。

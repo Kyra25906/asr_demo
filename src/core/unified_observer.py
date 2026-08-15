@@ -53,6 +53,8 @@ class UnifiedObservation:
     ) = None
     pending_action: ClarificationAction | None = None
     end_confirmation_requested: bool = False
+    answer_remaining_fields: tuple[str, ...] = ()
+    answer_resolved: bool = False
 
     def __post_init__(self) -> None:
         if self.status == UnifiedObservationStatus.OBSERVED:
