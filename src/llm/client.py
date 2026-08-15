@@ -298,7 +298,7 @@ class OpenAICompatibleLLMClient:
                 },
             ],
         }
-        print(
+        logger.debug(
             "[LLM请求] "
             f"model={payload['model']}，"
             f"thinking.type="
@@ -434,7 +434,7 @@ class OpenAICompatibleLLMClient:
         else:
             content_length = 0
 
-        print(
+        logger.debug(
             "[LLM响应] "
             f"finish_reason="
             f"{finish_reason!r}，"

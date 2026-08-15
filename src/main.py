@@ -1,3 +1,4 @@
+import logging
 import time
 from datetime import datetime
 
@@ -11,7 +12,9 @@ from src.audio.vad_recorder import (
     VadAudioRecorder,
 )
 from src.config import (
+    RESULTS_DIR,
     SESSION_CONTEXT_MAX_EVENTS,
+    UI_MODE,
     WAKEWORD_KEYWORDS_FILE,
     WAKEWORD_MODEL_DIR,
 )
@@ -30,7 +33,6 @@ from src.core.session_context import (
 )
 from src.core.unified_acceptance_bypass import UnifiedAcceptanceBypass
 from src.core.unified_observer import (
-    UnifiedObservationStatus,
     UnifiedObserver,
 )
 from src.core.ordered_task_queue import (
@@ -39,6 +41,30 @@ from src.core.ordered_task_queue import (
 from src.core.unified_segment_processor import (
     SegmentJob,
     UnifiedSegmentProcessor,
+)
+from src.core.presentation_coordinator import (
+    PresentationCoordinator,
+)
+from src.core.presentation_copy import (
+    ReviewItem,
+)
+from src.core.presentation_intent import (
+    PresentationIntent,
+)
+from src.core.presentation_message import (
+    MessageKind,
+    MessagePriority,
+    ScreenTarget,
+)
+from src.core.presentation_projection import (
+    messages_for_observation,
+    messages_for_review,
+)
+from src.core.presentation_pump import (
+    PresentationPump,
+)
+from src.core.terminal_renderer import (
+    TerminalRenderer,
 )
 from src.core.retry import (
     next_backoff_delay,
@@ -102,50 +128,10 @@ def is_affirm_command(
 def create_unified_observer() -> UnifiedObserver:
     """创建统一理解链观察器；统一链是唯一默认路径。"""
 
-    print("统一理解链已启用（唯一默认路径）。")
+    logging.info("统一理解链已启用（唯一默认路径）。")
     processor = UnifiedUnderstandingProcessor(create_llm_client())
     router = UnifiedUnderstandingRouter(processor)
     return UnifiedObserver(UnifiedAcceptanceBypass(router))
-
-def display_observation(observation) -> None:
-    """只显示脱敏摘要，不显示口述或外部错误详情。"""
-
-    if observation.status == UnifiedObservationStatus.FAILED:
-        print(
-            f"[统一链] 第{observation.segment_id}段观察失败："
-            f"{observation.error_type}；ASR 原文已保存。"
-        )
-        return
-
-    exec_note = ""
-    if (
-        getattr(observation, 'executed', False)
-        and getattr(observation, 'execution_reason', None)
-    ):
-        exec_note = f"；已执行：{observation.execution_reason}。"
-    elif getattr(observation, 'executed', False):
-        exec_note = "；已执行。"
-    elif observation.clarification_action == "no_action":
-        exec_note = "；无需执行。"
-    elif getattr(observation, 'execution_reason', None):
-        exec_note = f"；{observation.execution_reason}。"
-    else:
-        exec_note = "；未执行。"
-
-    print(
-        f"[统一链] 第{observation.segment_id}段："
-        f"目标={observation.destination}，"
-        f"权限={observation.permission}，"
-        f"采用={observation.acceptance_kind or 'none'}，"
-        f"缺失字段={observation.missing_fields or 'none'}，"
-        f"需要追问={observation.follow_up_required}，"
-        f"待确认动作={observation.clarification_action}"
-        + exec_note
-    )
-
-    # 降级给用户一句人话：原始记录已保存，只是结构化暂不可用。
-    if observation.acceptance_kind == "degraded_evidence_note":
-        print("原始记录已保存，结构化处理暂时不可用。")
 
 def recognize_one_segment(
     *,
@@ -164,11 +150,6 @@ def recognize_one_segment(
         AssistantState.LISTENING
     )
 
-    print(
-        "请开始口述实验过程，"
-        "说完后自然停顿即可。"
-    )
-
     audio_path = (
         recorder.record_until_silence()
     )
@@ -181,79 +162,14 @@ def recognize_one_segment(
         audio_path
     )
 
-def display_unresolved_clarifications(
-    reply_coordinator: ReplyCoordinator,
-) -> None:
-    """在会话结束时列出仍未解决的问题。"""
-
-    active = (
-        reply_coordinator
-        .active_clarifications()
-    )
-
-    if not active:
-        print(
-            "本次会话没有未解决的"
-            "确认项。\n"
-        )
-        return
-
-    print(
-        f"本次会话仍有 {len(active)} 个"
-        "确认项未解决："
-    )
-
-    for clarification in active:
-        status_label = (
-            "已暂缓"
-            if clarification.status
-            == ClarificationStatus.DEFERRED
-            else "待回答"
-        )
-        print(
-            f"- 问题 {clarification.display_number}"
-            f"（{status_label}），"
-            f"来源第 {clarification.source_segment_id} 段："
-            f"{clarification.source_raw_text}"
-        )
-        print(
-            f"  问题：{clarification.question}"
-        )
-
-    print()
-
-def display_review_summary(
-    summary,
-) -> None:
-    """统一链 review 动作的查看结果显示（基于处理时刻的快照）。"""
-
-    if not summary:
-        print("\n当前没有待确认问题。\n")
-        return
-
-    print(
-        f"\n当前共有 {len(summary)} 个"
-        "待确认问题："
-    )
-    for item in summary:
-        status_label = (
-            "已暂缓" if item.is_deferred else "待回答"
-        )
-        print(
-            f"- 问题 {item.display_number}"
-            f"（{status_label}）："
-            f"{item.question}"
-        )
-    print()
-
-
 def account_completed_task(task) -> bool:
     """统计一个已完成的后台任务；失败时报错，返回它是否算实验段。"""
 
     if task.error is not None:
-        print(
-            f"[统一链] 第{task.item.segment_id}段处理失败："
-            f"{task.error}"
+        logging.error(
+            "统一链第%s段处理失败：%s",
+            task.item.segment_id,
+            task.error,
         )
         return False
     return task.result.observation.is_experiment_evidence
@@ -313,15 +229,67 @@ def run_experiment_session(
     # 会话级"待确认结束"标志：后台识别到结束意图时置真，主循环读它。
     pending_end_confirmation = {"value": False}
 
-    def display_segment_outcome(outcome) -> None:
-        """后台线程算完时立即显示结果；结束确认时另置标志。"""
+    # 呈现链路：后台 worker 只投递 Intent，pump 是唯一 stdout 写入者。
+    coordinator = PresentationCoordinator()
+    renderer = TerminalRenderer(ui_mode=UI_MODE)
+    pump = PresentationPump(coordinator, renderer, output=print)
+    pump.start()
 
-        display_observation(outcome.observation)
+    # 实验步骤计数器：只对结构化实验段递增，供投影层做编号分离（UX-07）。
+    experiment_step_counter = {"value": 0}
+
+    # 主线程用户消息的唯一出口：固定提示投递给 pump。
+    emit_counter = {"value": 0}
+
+    def emit(
+        kind,
+        text,
+        *,
+        priority=MessagePriority.ROUTINE,
+        screen_target=ScreenTarget.STATUS,
+    ) -> None:
+        emit_counter["value"] += 1
+        coordinator.submit([PresentationIntent(
+            intent_id=f"main-{emit_counter['value']}",
+            kind=kind,
+            args={"text": text},
+            priority=priority,
+            screen_target=screen_target,
+        )])
+
+    def display_segment_outcome(outcome) -> None:
+        """后台算完时投递呈现意图；开发详情只进日志。"""
+
+        observation = outcome.observation
+        logging.debug(
+            "统一链第%s段：目标=%s，采用=%s，待确认动作=%s，"
+            "已执行=%s，执行原因=%s",
+            observation.segment_id,
+            observation.destination,
+            observation.acceptance_kind or "none",
+            observation.clarification_action,
+            observation.executed,
+            observation.execution_reason,
+        )
+
+        step_number = None
+        if observation.acceptance_kind == "structured_experiment":
+            experiment_step_counter["value"] += 1
+            step_number = experiment_step_counter["value"]
+
+        intents = list(messages_for_observation(
+            observation,
+            experiment_step_number=step_number,
+        ))
         if outcome.review_summary is not None:
-            display_review_summary(outcome.review_summary)
-        print(f"第 {outcome.observation.segment_id} 段已保存。")
-        if outcome.observation.end_confirmation_requested:
-            print("是否结束本次实验记录？（请说“是的”或“不是”）")
+            intents.extend(messages_for_review(
+                outcome.review_summary,
+                request_id=observation.request_id,
+            ))
+
+        coordinator.submit(intents)
+
+        if observation.end_confirmation_requested:
             pending_end_confirmation["value"] = True
 
     worker = UnifiedSegmentProcessor(
@@ -352,23 +320,20 @@ def run_experiment_session(
         AssistantState.SESSION_ACTIVE
     )
 
-    print(
-        "\n实验记录会话已开始。"
-    )
-    print(
-        f"会话编号：{session_id}"
-    )
-    print(
-        "现在可以连续口述，"
-        "无需等待 LLM 处理完成。"
-    )
-    print(
-        "说“结束实验记录”"
-        "可以结束本次会话。\n"
+    emit(
+        MessageKind.STAGE_SUMMARY,
+        "实验记录会话已开始。\n"
+        f"会话编号：{session_id}\n"
+        "现在可以连续口述，无需等待 LLM 处理完成。\n"
+        "说“结束实验记录”可以结束本次会话。",
     )
 
     while True:
         try:
+            emit(
+                MessageKind.STAGE_SUMMARY,
+                "请开始口述实验过程，说完后自然停顿即可。",
+            )
             asr_result = (
                 recognize_one_segment(
                     recorder=recorder,
@@ -383,11 +348,9 @@ def run_experiment_session(
                 time.monotonic()
             )
 
-            print(
-                "\n本段 ASR 识别完成："
-            )
-            print(
-            asr_result.asr_transcript
+            emit(
+                MessageKind.TRANSCRIPT,
+                f"本段 ASR 识别完成：{asr_result.asr_transcript}",
             )
 
             # 结束命令不写入 ASR 文件，
@@ -395,9 +358,9 @@ def run_experiment_session(
             if is_end_session_command(
             asr_result.asr_transcript
             ):
-                print(
-                    "\n检测到结束指令，"
-                    "停止接收新的实验口述。"
+                emit(
+                    MessageKind.STAGE_SUMMARY,
+                    "检测到结束指令，停止接收新的实验口述。",
                 )
                 break
 
@@ -405,9 +368,9 @@ def run_experiment_session(
                 pending_end_confirmation["value"]
                 and is_affirm_command(asr_result.asr_transcript)
             ):
-                print(
-                    "\n确认结束，"
-                    "停止接收新的实验口述。"
+                emit(
+                    MessageKind.STAGE_SUMMARY,
+                    "确认结束，停止接收新的实验口述。",
                 )
                 break
 
@@ -430,7 +393,7 @@ def run_experiment_session(
             for task in completed:
                 if account_completed_task(task):
                     experiment_segment_count += 1
-            print("系统将立即继续监听。\n")
+            emit(MessageKind.STAGE_SUMMARY, "系统将立即继续监听。")
 
         except TimeoutError:
             idle_seconds = (
@@ -444,10 +407,9 @@ def run_experiment_session(
                     SESSION_IDLE_TIMEOUT_SECONDS
                 )
             ):
-                print(
-                    "\n实验会话"
-                    "长时间无口述，"
-                    "停止接收新输入。"
+                emit(
+                    MessageKind.STAGE_SUMMARY,
+                    "实验会话长时间无口述，停止接收新输入。",
                 )
                 break
 
@@ -456,24 +418,18 @@ def run_experiment_session(
                 - idle_seconds
             )
 
-            print(
-                "\n暂时没有检测到口述，"
-                "实验会话继续等待。"
-            )
-            print(
-                f"距离自动结束约还有 "
-                f"{remaining_seconds:.0f} 秒。\n"
+            emit(
+                MessageKind.STAGE_SUMMARY,
+                "暂时没有检测到口述，实验会话继续等待。"
+                f"距离自动结束约还有 {remaining_seconds:.0f} 秒。",
             )
 
         except Exception as error:
-            print(
-                "\n本段录音或识别失败："
-                f"{type(error).__name__}: "
-                f"{error}"
-            )
-            print(
-                "当前实验会话仍然有效，"
-                "系统将继续监听。\n"
+            emit(
+                MessageKind.SYSTEM_ISSUE,
+                "本段录音或识别失败："
+                f"{type(error).__name__}: {error}。"
+                "当前实验会话仍然有效，系统将继续监听。",
             )
 
         finally:
@@ -486,22 +442,59 @@ def run_experiment_session(
         if account_completed_task(task):
             experiment_segment_count += 1
 
-    print(
-        f"\n实验会话结束，"
-        f"共处理 {utterance_count} "
-        "段会话口述，"
-        f"其中提交 {experiment_segment_count} "
-        "段实验口述。"
+    emit(
+        MessageKind.SESSION_SUMMARY,
+        f"实验会话结束，共处理 {utterance_count} 段会话口述，"
+        f"其中提交 {experiment_segment_count} 段实验口述。",
     )
-    print(
-        f"最终上下文包含 "
-        f"{len(session_context)} "
-        "条事件。\n"
+    logging.debug(
+        "最终上下文包含 %s 条事件。",
+        len(session_context),
     )
 
-    display_unresolved_clarifications(
-        reply_coordinator
-    )
+    active = reply_coordinator.active_clarifications()
+    if active:
+        coordinator.submit([PresentationIntent(
+            intent_id=f"{session_id}-final-review",
+            kind=MessageKind.CLARIFICATION_REVIEW,
+            args={
+                "items": tuple(
+                    ReviewItem(
+                        display_number=clarification.display_number,
+                        is_deferred=(
+                            clarification.status
+                            == ClarificationStatus.DEFERRED
+                        ),
+                        question=clarification.question,
+                    )
+                    for clarification in active
+                ),
+            },
+            priority=MessagePriority.REVIEW,
+            screen_target=ScreenTarget.DIALOGUE,
+        )])
+
+    # 等 pump 渲染完剩余消息再停止，避免丢最后几条回执。
+    deadline = time.monotonic() + 2.0
+    while coordinator.pending_count > 0 and time.monotonic() < deadline:
+        time.sleep(0.01)
+    pump.stop(timeout=1)
+
+def configure_logging() -> None:
+    """按 UI_MODE 配置日志：user 写文件，admin 输出屏幕。"""
+
+    if UI_MODE == "user":
+        logging.basicConfig(
+            level=logging.DEBUG,
+            filename=str(RESULTS_DIR / "debug.log"),
+            format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        )
+    else:
+        logging.basicConfig(
+            level=logging.DEBUG,
+            format="%(levelname)s %(name)s: %(message)s",
+        )
+
 
 def main() -> None:
     """
@@ -510,6 +503,8 @@ def main() -> None:
     在这里创建程序级对象，
     并明确它们之间的依赖关系。
     """
+
+    configure_logging()
 
     state_manager = StateManager()
 
@@ -546,12 +541,7 @@ def main() -> None:
         )
     )
 
-    print(
-        "\n实验语音智能体已启动。"
-    )
-    print(
-        "按 Ctrl+C 关闭程序。\n"
-    )
+    logging.info("实验语音智能体已启动。按 Ctrl+C 关闭程序。")
 
     # 唤醒连续失败次数：每次失败按指数退避等待，
     # 成功后重置为 0，避免音频设备异常时疯狂转圈。
@@ -569,10 +559,7 @@ def main() -> None:
             )
             consecutive_failures = 0
 
-            print(
-                f"\n唤醒成功："
-                f"{detected_keyword}"
-            )
+            logging.info("唤醒成功：%s", detected_keyword)
 
             play_wake_tone()
 
@@ -595,15 +582,14 @@ def main() -> None:
             retry_delay = next_backoff_delay(
                 consecutive_failures
             )
-            print(
-                "\n唤醒或会话异常："
-                f"{type(error).__name__}: "
-                f"{error}"
-            )
-            print(
-                "系统将重新进入待机状态，"
-                f"{retry_delay:.1f} 秒后重试"
-                f"（连续第 {consecutive_failures} 次）。\n"
+            logging.error(
+                "唤醒或会话异常：%s: %s。"
+                "系统将重新进入待机状态，%.1f 秒后重试"
+                "（连续第 %s 次）。",
+                type(error).__name__,
+                error,
+                retry_delay,
+                consecutive_failures,
             )
             time.sleep(retry_delay)
 
@@ -616,6 +602,4 @@ if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        print(
-            "\n用户关闭程序。"
-        )
+        logging.info("用户关闭程序。")

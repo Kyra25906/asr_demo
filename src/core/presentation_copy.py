@@ -58,14 +58,25 @@ _FIELD_LABELS = {
 }
 
 
+_PASSTHROUGH_KINDS = frozenset({
+    MessageKind.WAKE_ACK,
+    MessageKind.TRANSCRIPT,
+    MessageKind.STAGE_SUMMARY,
+    MessageKind.SESSION_SUMMARY,
+    MessageKind.SYSTEM_ISSUE,
+})
+
+
 def copy_for_intent(
     intent: PresentationIntent,
     *,
     ui_mode: str,
 ) -> str:
-    """生成最终文案；支持记录回执、追问、回答/确认回执、暂缓与查看列表。"""
+    """生成最终文案；支持记录回执、追问、回答/确认回执、暂缓、查看列表与固定提示。"""
 
     _validate_ui_mode(ui_mode)
+    if intent.kind in _PASSTHROUGH_KINDS:
+        return _copy_passthrough(intent)
     if intent.kind == MessageKind.RECORD_ACK:
         return _copy_record_ack(intent, ui_mode)
     if intent.kind == MessageKind.CLARIFICATION:
@@ -82,6 +93,15 @@ def copy_for_intent(
 def _validate_ui_mode(ui_mode: str) -> None:
     if ui_mode not in {"user", "admin"}:
         raise ValueError("ui_mode 必须是 user 或 admin。")
+
+
+def _copy_passthrough(intent: PresentationIntent) -> str:
+    """固定提示类消息透传 args["text"]，不做翻译。"""
+
+    text = intent.args.get("text")
+    if not isinstance(text, str) or not text.strip():
+        raise ValueError(f"{intent.kind.value} 必须包含非空 text。")
+    return text
 
 
 def _with_source(base: str, intent: PresentationIntent, ui_mode: str) -> str:

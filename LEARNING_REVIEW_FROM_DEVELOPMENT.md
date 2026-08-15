@@ -3132,3 +3132,108 @@ ASR 保存失败 → `continue`（跳过整段，不继续事件保存）。因�
 
 - **验收与体验边界**：专项 57/57、正式全量 544/544 通过。本轮未接主流程，无用户可见变化，按规则跳过九维 UX 走查。
 - **下一步原因**：进入子步 B——Coordinator + presentation pump + 接 main + 删旧 print + 真实验收；B 是动真实设备的阶段，需用户授权数据外发并做九维走查。
+
+## 2026-08-16（PRESENT 子步 B-1）：Coordinator 纯逻辑
+
+- **本轮做了什么**：新增 `presentation_coordinator.py` 纯函数 `coordinate`（FIFO + 相邻去重 + 单问题限制）。专项 8/8、正式全量 552/552 通过。未接 main。
+
+- **知识点一：先把规则抽成纯函数，再套有状态外壳**。
+  - 白话解释：Coordinator 的"排序/去重/单问题"是一套不依赖线程的规则；先把规则做成纯函数测对，再在外面套"排队窗口"（有状态队列），规则对错一眼可知，不会被线程复杂度掩盖。
+  - 专业术语：纯逻辑与有状态包装分离（Separate Pure Logic from Stateful Shell）。
+  - 项目实际体现：`coordinate` 是纯函数，B-2 的线程安全队列只是调用它。
+
+- **知识点二：排序不是"按优先级全局重排"**。
+  - 白话解释：若把所有消息按优先级从高到低重排，后到的低优先级消息会被插到前面，破坏回合顺序。正确是"先来先出"当主干，优先级只用来"多个问题选一个"。
+  - 专业术语：稳定 FIFO 主干 + 优先级仅用于局部选择（FIFO Backbone + Priority for Local Selection Only）。
+  - 项目实际体现：`coordinate` 不重排顺序，只做相邻去重和单问题选择。
+
+- **知识点三：延后 ≠ 丢弃**。
+  - 白话解释：被"单问题限制"压下的问题不能扔，用户还要回答它；所以返回值分 `deliver`（本轮显示）和 `deferred`（被压下），由有状态层下一轮再放。
+  - 专业术语：延迟交付（Deferred Delivery）vs 丢弃（Drop）。
+  - 项目实际体现：`coordinate` 返回 `(deliver, deferred)`，多余问题进 `deferred` 不丢失。
+
+- **验收与体验边界**：专项 8/8、正式全量 552/552 通过。本轮未接主流程，无用户可见变化，按规则跳过九维 UX 走查。
+- **下一步原因**：做 B-2——Renderer 协议 + Coordinator 有状态队列 + presentation pump（唯一输出权）；仍不接 main。
+
+## 2026-08-16（PRESENT 子步 B-2）：Renderer 协议 + 有状态队列 + pump
+
+- **本轮做了什么**：新增 `presentation_pump.py`（`Renderer` 协议 + `PresentationPump`）；`PresentationCoordinator` 加线程安全队列。专项 15/15、正式全量 559/559 通过。未接 main。
+
+- **知识点一：协议（Protocol）与依赖倒置**。
+  - 白话解释：pump 不该绑死"终端渲染器"这个具体类，否则将来换网页渲染器就得改 pump。协议就是"招聘要求"——只要求"会 render(intent)→str"，不管是谁。
+  - 专业术语：协议（Protocol）、鸭子类型（Duck Typing）、依赖倒置（Dependency Inversion）。
+  - 项目实际体现：`Renderer` 协议只约定 `render` 方法；`TerminalRenderer` 天然满足，未来 Web/TTS 渲染器实现同一方法即可，pump 一行不改。
+
+- **知识点二：线程安全队列 + 条件变量（阻塞取货）**。
+  - 白话解释：多个后台线程同时投递、pump 取货，必须保证"不丢、不重复、顺序不乱"；用锁 + 条件变量让取货者在没货时睡觉、有货时被叫醒。
+  - 专业术语：线程安全（Thread-safe）、条件变量（Condition）、阻塞队列（Blocking Queue）。
+  - 项目实际体现：`PresentationCoordinator.submit/drain` 用 `threading.Condition`；`drain` 在空队时 `wait(timeout)`，`submit` 后 `notify_all`。
+
+- **知识点三：单一输出权（single-writer）**。
+  - 白话解释：所有执行流都不许自己往屏幕写字，只有 pump 这一条执行流拥有 stdout；后台 worker 只"递纸条"（submit），不"张嘴"（print）。
+  - 专业术语：单一写入者（Single-writer）、消费者线程（Consumer Thread）。
+  - 项目实际体现：`PresentationPump._run` 循环 drain → render → output，是唯一写 stdout 的地方；output 以参数注入（默认 print），测试可换 Fake 记录调用。
+
+- **验收与体验边界**：专项 15/15、正式全量 559/559 通过。本轮未接主流程，无用户可见变化，按规则跳过九维 UX 走查。
+- **下一步原因**：做 B-3——把 main.py 的散落 print 收敛到投影→投递→pump 链路，删旧 print、DEBUG 迁 logging；这是动 main 和真实设备的一步，需用户授权数据外发。
+
+## 2026-08-16（PRESENT 子步 B-3a）：后台 display 回调接线
+
+- **本轮做了什么**：`main.py` 的 `display_segment_outcome` 从"直接 print"改成"投影→投递→pump"；删旧 `display_observation`/`display_review_summary`；加 `UI_MODE` 配置。全量 559/559 通过。真实验收待 B-3b 后统一做。
+
+- **知识点一：后台不直接输出，是单一输出权的落地**。
+  - 白话解释：之前后台 worker 线程算完直接 print，和主线程的 print 混在一起、顺序乱。现在 worker 只把结果投影成 Intent、投递给 Coordinator，由 pump 唯一渲染——"递纸条"和"念纸条"分开。
+  - 专业术语：单一写入者（Single-writer）、生产者-消费者分离（Producer-Consumer Separation）。
+  - 项目实际体现：`display_segment_outcome` 里 `coordinator.submit(intents)`，不再 `print`。
+
+- **知识点二：开发信息走日志，用户信息走屏幕**。
+  - 白话解释：同一段结果里，用户要看到"已记录实验步骤 3"，开发排查要看到"目标=实验、待确认动作=创建"。前者走屏幕（pump），后者走日志（logging.debug），各走各的、互不污染。
+  - 专业术语：日志分级（Log Level）、信息分诊（Information Triaging）。
+  - 项目实际体现：display 回调里 `logging.debug(...)` 记开发详情，`messages_for_observation` 产出的 Intent 走屏幕。
+
+- **知识点三：编号分离的时机——步骤号在"确认是实验段"时才递增**。
+  - 白话解释：不是每次说话都算实验步骤（确认答复、查看、暂缓不算）。所以"实验步骤 N"的计数器，只在判定为结构化实验段时才 +1。
+  - 专业术语：编号域分离（Numbering Domain Separation）、条件递增（Conditional Increment）。
+  - 项目实际体现：`experiment_step_counter` 只在 `acceptance_kind == "structured_experiment"` 时递增，投影层用 `step_number` 而非内部 `segment_id`。
+
+- **验收与体验边界**：全量 559/559 通过（无新增测试，纯接线；集成测试 test_main_nonblocking 通过）。本轮改了用户可见输出面，但真实验收与 UX 走查待 B-3b 完成后统一做。
+- **下一步原因**：做 B-3b——主循环散落 print 迁移、结束汇总/待确认列表迁投递、基础设施 DEBUG 迁 logging。
+
+## 2026-08-16（PRESENT 子步 B-3b）：DEBUG 分流（迁 logging）
+
+- **本轮做了什么**：基础设施（`llm/client.py`、`asr/sensevoice_backend.py`、`core/state_manager.py`）与 `main.py` 里的开发语言 print 全部迁到 `logging`；`main()` 加 `configure_logging`（user 写文件、admin 输出屏幕）。全量 559/559 通过。
+
+- **知识点一：日志分级——不同重要性的信息走不同级别**。
+  - 白话解释：模型加载、识别过程这类"开发才关心"的走 debug/info；处理失败这类"要查错"的走 error。级别像筛子，配置一下就能决定"屏幕显示多细"。
+  - 专业术语：日志级别（Log Level：DEBUG/INFO/WARNING/ERROR）。
+  - 项目实际体现：`[LLM请求]/[LLM响应]`、`状态变化` 用 `logger.debug`；`统一链已启用` 用 `logging.info`；`处理失败` 用 `logging.error`。
+
+- **知识点二：配置驱动输出目的地（user/admin 分流）**。
+  - 白话解释：同一个 `logger.debug`，在 user 模式下写进日志文件（屏幕干净），在 admin 模式下打到屏幕（方便调试）——切换只改配置，不改每处日志代码。
+  - 专业术语：Handler 配置（logging Handler）、输出目的地切换（Sink Switching）。
+  - 项目实际体现：`configure_logging` 按 `UI_MODE` 选 `FileHandler`（user）或默认 StreamHandler（admin）。
+
+- **验收与体验边界**：全量 559/559 通过。本轮改了输出面（屏幕不再有开发语言），但完整真实验收 + UX 走查待 B-3c 完成后统一做。
+- **下一步原因**：做 B-3c——主循环用户消息 print（ASR 回显/监听提示/结束汇总/待确认列表）迁到 pump，达成"单一输出入口"。
+
+## 2026-08-16（PRESENT 子步 B-3c）：主循环用户消息 → pump（单一输出入口）
+
+- **本轮做了什么**：文案目录加透传 kind；`main.py` 加 `emit` 闭包，把所有用户消息 print 迁到 pump；`main.py` 零 print 残留。全量 562/562 通过。
+
+- **知识点一：单一输出入口的落地——所有用户消息走同一扇门**。
+  - 白话解释：主循环之前自己 print、后台 worker 也 print，两扇门乱序。现在主循环用 emit 投递、worker 用 display 回调投递，都进同一个 Coordinator，由 pump 统一念——只有一扇门。
+  - 专业术语：单一写入者（Single-writer）、统一出口（Unified Output Sink）。
+  - 项目实际体现：`emit` 闭包和 `display_segment_outcome` 都调 `coordinator.submit`。
+
+- **知识点二：固定提示透传 vs 业务文案翻译（两类文案分开）**。
+  - 白话解释："系统将立即继续监听"是写死的固定提示，不用翻译；"已记录实验步骤 N"是从业务数据（步骤号）拼出来的。前者文案目录透传 text，后者走 kind+args 翻译。
+  - 专业术语：透传（Passthrough）vs 翻译（Translation）。
+  - 项目实际体现：`_PASSTHROUGH_KINDS` + `_copy_passthrough` 对固定提示透传 args["text"]。
+
+- **知识点三：程序级消息与会话内消息的边界**。
+  - 白话解释：启动/唤醒/异常/退出是"程序级"状态，时机确定、不在会话内消息流里，走日志；会话内的实验记录对话才需要 pump 排序。
+  - 专业术语：作用域划分（Scope Separation）、日志 vs 用户消息分流。
+  - 项目实际体现：main() 的启动/唤醒/异常走 `logging`；run_experiment_session 内的用户消息走 emit。
+
+- **验收与体验边界**：全量 562/562 通过（+3 透传测试）。本轮大幅改了用户可见输出面（屏幕消息全部走 pump、去开发语言），**真实验收 + 九维走查（维 1/2/4/5/6/7/9）待 B-4 统一做，需用户授权数据外发**。
+- **下一步原因**：做 B-4 真实验收——真实麦克风/ASR/LLM 会话，验证 6 条完成标准的第 6 条"无重复/丢失/延迟退化"，并九维走查。

@@ -353,5 +353,36 @@ class ReviewCopyTests(unittest.TestCase):
             ReviewItem(display_number=0, is_deferred=False, question="q")
 
 
+class PassthroughCopyTests(unittest.TestCase):
+    def test_stage_summary_passthrough_text(self):
+        intent = _make_intent(
+            MessageKind.STAGE_SUMMARY,
+            args={"text": "系统将立即继续监听。"},
+        )
+
+        text = copy_for_intent(intent, ui_mode="user")
+
+        self.assertEqual(text, "系统将立即继续监听。")
+
+    def test_transcript_passthrough_text(self):
+        intent = _make_intent(
+            MessageKind.TRANSCRIPT,
+            args={"text": "本段 ASR 识别完成：加入缓冲液"},
+        )
+
+        text = copy_for_intent(intent, ui_mode="user")
+
+        self.assertEqual(text, "本段 ASR 识别完成：加入缓冲液")
+
+    def test_passthrough_requires_text(self):
+        intent = _make_intent(
+            MessageKind.TRANSCRIPT,
+            args={},
+        )
+
+        with self.assertRaises(ValueError):
+            copy_for_intent(intent, ui_mode="user")
+
+
 if __name__ == "__main__":
     unittest.main()

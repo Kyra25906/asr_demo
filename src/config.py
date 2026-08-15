@@ -280,3 +280,14 @@ SESSION_CONTEXT_MAX_EVENTS = 8
 # 单次实验会话允许积压的
 # 最大后台处理任务数。
 SESSION_MAX_PENDING_TASKS = 4
+
+
+# ==================================================
+# 输出呈现配置
+# ==================================================
+
+UI_MODE = os.getenv("UI_MODE", "user").strip().lower()
+if UI_MODE not in {"user", "admin"}:
+    raise RuntimeError(
+        f"UI_MODE 必须是 user 或 admin，当前值为：{UI_MODE!r}"
+    )

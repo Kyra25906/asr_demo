@@ -30,9 +30,13 @@ _END_CONFIRMATION_QUESTION = '是否结束本次实验记录？（请说"是的"
 def messages_for_observation(
     observation: UnifiedObservation,
     *,
-    experiment_step_number: int,
+    experiment_step_number: int | None = None,
 ) -> tuple[PresentationIntent, ...]:
-    """把一段口述的观察摘要翻译成呈现意图（零条或多条）。"""
+    """把一段口述的观察摘要翻译成呈现意图（零条或多条）。
+
+    experiment_step_number 仅在 structured_experiment 时使用；
+    非实验段（降级/失败/追问/命令）传 None。
+    """
 
     if observation.status == UnifiedObservationStatus.FAILED:
         return (_record_ack(observation, RecordAckResult.FAILED),)

@@ -1,6 +1,9 @@
+import logging
 from collections.abc import Callable
 
 from src.core.states import AssistantState
+
+logger = logging.getLogger(__name__)
 
 
 class StateManager:
@@ -31,7 +34,7 @@ class StateManager:
         old_state = self._state
         self._state = new_state
 
-        print(
+        logger.debug(
             f"状态变化："
             f"{old_state.value}"
             f" -> "

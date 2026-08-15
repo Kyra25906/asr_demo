@@ -1,5 +1,6 @@
 """SenseVoiceSmall对项目统一ASR合同的适配器。"""
 
+import logging
 import time
 from pathlib import Path
 from typing import Any, Callable
@@ -13,6 +14,9 @@ from src.config import (
     DEVICE,
     VAD_MODEL,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 class SenseVoiceBackend:
@@ -34,7 +38,7 @@ class SenseVoiceBackend:
         if model_engine is None:
             from funasr import AutoModel
 
-            print("正在加载SenseVoice ASR模型……")
+            logger.info("正在加载SenseVoice ASR模型……")
             model_engine = AutoModel(
                 model=model_name,
                 vad_model=vad_model,
@@ -43,7 +47,7 @@ class SenseVoiceBackend:
                 },
                 device=device,
             )
-            print("SenseVoice ASR模型加载完成")
+            logger.info("SenseVoice ASR模型加载完成")
 
         if postprocess is None:
             from funasr.utils.postprocess_utils import (
@@ -79,7 +83,7 @@ class SenseVoiceBackend:
             audio_info.frames / audio_info.samplerate
         )
 
-        print(f"正在识别：{audio_path}")
+        logger.debug(f"正在识别：{audio_path}")
         start_time = time.perf_counter()
         result = self._model_engine.generate(
             input=str(audio_path),
