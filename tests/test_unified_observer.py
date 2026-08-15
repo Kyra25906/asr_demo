@@ -56,6 +56,7 @@ class Result:
     execution_request = Request()
     accepted_experiment = Accepted()
     clarification_action = Action()
+    end_confirmation_requested = False
 
 
 def asr(text="加入缓冲液。"):

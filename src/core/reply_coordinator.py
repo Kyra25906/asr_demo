@@ -209,6 +209,9 @@ class ReplyCoordinator:
         )
         self._clarifications.append(clarification)
         self._next_display_number += 1
+        # 新问题创建即"当前问题"：统一链创建后立即显示给用户，
+        # 后续"这个问题先跳过/是/不是"都应能定位到它。
+        self._current_clarification_id = clarification.clarification_id
         return clarification
 
     def defer_clarification(

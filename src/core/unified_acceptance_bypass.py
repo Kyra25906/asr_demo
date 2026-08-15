@@ -65,6 +65,7 @@ class UnifiedAcceptanceBypassResult:
     execution_request: DispatchExecutionRequest
     accepted_experiment: AcceptedExperimentAnalysis | None
     clarification_action: ClarificationAction
+    end_confirmation_requested: bool = False
 
     def __post_init__(self) -> None:
         identities = {
@@ -113,6 +114,7 @@ class UnifiedAcceptanceBypass:
             plan=plan,
         )
 
+        end_confirmation_requested = False
         if plan.destination in {
             UnifiedDispatchDestination.EXPERIMENT_PIPELINE,
             UnifiedDispatchDestination.DEGRADED_NOTE,
@@ -128,13 +130,23 @@ class UnifiedAcceptanceBypass:
                 request,
                 bypass_input.clarification_context,
             )
+        elif (
+            plan.destination
+            == UnifiedDispatchDestination.END_SESSION_CONFIRMATION
+        ):
+            accepted = None
+            action = ClarificationActionPlanner.from_end_confirmation(
+                request
+            )
+            end_confirmation_requested = True
         else:
             raise ValueError(
-                "当前采用旁路不处理结束会话目标，避免扩大副作用范围。"
+                "当前采用旁路不处理该结束会话目标，避免扩大副作用范围。"
             )
 
         return UnifiedAcceptanceBypassResult(
             execution_request=request,
             accepted_experiment=accepted,
             clarification_action=action,
+            end_confirmation_requested=end_confirmation_requested,
         )

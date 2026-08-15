@@ -72,7 +72,7 @@ class IntentPolicyTests(unittest.TestCase):
         )
         self.assertTrue(decision.may_execute_now)
 
-    def test_reversible_defer_allows_only_local_semantic_candidate(self):
+    def test_reversible_defer_allows_local_semantic_and_llm_candidate(self):
         local = IntentPolicyEvaluator.evaluate(
             InteractionCommandType.DEFER_CURRENT,
             IntentEvidence.LOCAL_SEMANTIC,
@@ -88,7 +88,7 @@ class IntentPolicyTests(unittest.TestCase):
         )
         self.assertEqual(
             llm.disposition,
-            IntentDisposition.DO_NOT_EXECUTE,
+            IntentDisposition.REQUIRE_CONTEXT,
         )
 
     def test_llm_cannot_directly_write_confirmation_state(self):

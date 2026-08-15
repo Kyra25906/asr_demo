@@ -86,6 +86,13 @@ INTENT_POLICIES = {
         requires_clarification_context=True,
         reversible=True,
     ),
+    InteractionCommandType.DEFER_TARGETED: IntentPolicy(
+        command_type=InteractionCommandType.DEFER_TARGETED,
+        risk=IntentRisk.MEDIUM,
+        changes_session_state=True,
+        requires_clarification_context=True,
+        reversible=True,
+    ),
     InteractionCommandType.AFFIRM: IntentPolicy(
         command_type=InteractionCommandType.AFFIRM,
         risk=IntentRisk.MEDIUM,
@@ -170,12 +177,16 @@ class IntentPolicyEvaluator:
 
         disposition = (
             IntentDisposition.REQUIRE_CONTEXT
-            if evidence == IntentEvidence.LOCAL_SEMANTIC
-            and policy.reversible
+            if policy.reversible
+            and evidence
+            in {
+                IntentEvidence.LOCAL_SEMANTIC,
+                IntentEvidence.LLM_CANDIDATE,
+            }
             else IntentDisposition.DO_NOT_EXECUTE
         )
         reason = (
-            "本地语义命中且操作可恢复，交由上下文层再次校验。"
+            "可恢复操作命中，交由上下文层再次校验。"
             if disposition == IntentDisposition.REQUIRE_CONTEXT
             else "状态写入意图证据不足，保留候选但不执行。"
         )

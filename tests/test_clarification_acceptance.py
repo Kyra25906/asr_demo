@@ -210,9 +210,21 @@ class ClarificationAcceptanceTests(unittest.TestCase):
         self.assertEqual(action.mutation_permission, ClarificationMutationPermission.NONE)
         self.assertIsNone(action.target_clarification_id)
 
+    def test_llm_defer_candidate_forms_defer_action(self):
+        item = pending()
+        context = ClarificationContextSnapshot(
+            (item,),
+            current_clarification_id=item.clarification_id,
+        )
+        request = dispatch_request(control_route(
+            InteractionCommandType.DEFER_CURRENT,
+        ))
+        action = ClarificationActionPlanner.from_dispatch(request, context)
+        self.assertEqual(action.action_type, ClarificationActionType.DEFER)
+        self.assertEqual(action.expected_revision, item.revision)
+
     def test_all_llm_medium_risk_state_candidates_stay_no_action(self):
         cases = (
-            (InteractionCommandType.DEFER_CURRENT, {}),
             (InteractionCommandType.AFFIRM, {"answer_text": "是"}),
             (InteractionCommandType.DENY, {"answer_text": "不是"}),
             (

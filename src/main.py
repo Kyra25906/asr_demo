@@ -1,5 +1,4 @@
 import time
-from dataclasses import replace
 from datetime import datetime
 
 from src.asr.factory import (
@@ -15,17 +14,6 @@ from src.config import (
     SESSION_CONTEXT_MAX_EVENTS,
     WAKEWORD_KEYWORDS_FILE,
     WAKEWORD_MODEL_DIR,
-)
-from src.core.confirmation_record import (
-    ConfirmationRecord,
-)
-from src.core.answer_fallback import (
-    decide_unnumbered_answer,
-)
-from src.core.clarification_acceptance import (
-    ClarificationAction,
-    ClarificationActionType,
-    ClarificationMutationPermission,
 )
 from src.core.interaction_command import (
     InteractionCommandParser,
@@ -44,6 +32,13 @@ from src.core.unified_acceptance_bypass import UnifiedAcceptanceBypass
 from src.core.unified_observer import (
     UnifiedObservationStatus,
     UnifiedObserver,
+)
+from src.core.ordered_task_queue import (
+    OrderedTaskQueue,
+)
+from src.core.unified_segment_processor import (
+    SegmentJob,
+    UnifiedSegmentProcessor,
 )
 from src.core.retry import (
     next_backoff_delay,
@@ -94,6 +89,16 @@ def is_end_session_command(
     command = InteractionCommandParser.parse(text)
     return command.command_type == InteractionCommandType.END_SESSION
 
+def is_affirm_command(
+    text: str,
+) -> bool:
+    """
+    判断识别文本是否为肯定答复（"是/是的/对…"）。
+    """
+
+    command = InteractionCommandParser.parse(text)
+    return command.command_type == InteractionCommandType.AFFIRM
+
 def create_unified_observer() -> UnifiedObserver:
     """创建统一理解链观察器；统一链是唯一默认路径。"""
 
@@ -108,7 +113,7 @@ def display_observation(observation) -> None:
     if observation.status == UnifiedObservationStatus.FAILED:
         print(
             f"[统一链] 第{observation.segment_id}段观察失败："
-            f"{observation.error_type}；旧流程继续。"
+            f"{observation.error_type}；ASR 原文已保存。"
         )
         return
 
@@ -137,6 +142,10 @@ def display_observation(observation) -> None:
         f"待确认动作={observation.clarification_action}"
         + exec_note
     )
+
+    # 降级给用户一句人话：原始记录已保存，只是结构化暂不可用。
+    if observation.acceptance_kind == "degraded_evidence_note":
+        print("原始记录已保存，结构化处理暂时不可用。")
 
 def recognize_one_segment(
     *,
@@ -213,37 +222,41 @@ def display_unresolved_clarifications(
 
     print()
 
-def display_review_result(
-    reply_coordinator: ReplyCoordinator,
+def display_review_summary(
+    summary,
 ) -> None:
-    """统一链 review 动作的查看结果显示（REVIEW-OUTPUT-01）。"""
+    """统一链 review 动作的查看结果显示（基于处理时刻的快照）。"""
 
-    unresolved = (
-        reply_coordinator
-        .active_clarifications()
-    )
-
-    if not unresolved:
+    if not summary:
         print("\n当前没有待确认问题。\n")
         return
 
     print(
-        f"\n当前共有 {len(unresolved)} 个"
+        f"\n当前共有 {len(summary)} 个"
         "待确认问题："
     )
-    for clarification in unresolved:
+    for item in summary:
         status_label = (
-            "已暂缓"
-            if clarification.status
-            == ClarificationStatus.DEFERRED
-            else "待回答"
+            "已暂缓" if item.is_deferred else "待回答"
         )
         print(
-            f"- 问题 {clarification.display_number}"
+            f"- 问题 {item.display_number}"
             f"（{status_label}）："
-            f"{clarification.question}"
+            f"{item.question}"
         )
     print()
+
+
+def account_completed_task(task) -> bool:
+    """统计一个已完成的后台任务；失败时报错，返回它是否算实验段。"""
+
+    if task.error is not None:
+        print(
+            f"[统一链] 第{task.item.segment_id}段处理失败："
+            f"{task.error}"
+        )
+        return False
+    return task.result.observation.is_experiment_evidence
 
 def run_experiment_session(
     *,
@@ -254,16 +267,14 @@ def run_experiment_session(
     confirmation_store: ConfirmationStore,
     state_manager: StateManager,
     observer: UnifiedObserver,
+    executor=None,
 ) -> None:
     """
     运行一次完整实验会话。
 
-    主线程负责：
-    - 录音；
-    - ASR；
-    - 判断结束指令；
-    - 统一链观察（理解/分派/执行）；
-    - 直接落盘 ASR 与事件证据。
+    主线程只负责：录音、ASR、判断结束指令、提交后台任务、显示结果。
+    观察/落盘/兜底/执行/确认等业务逻辑在后台单线程按序执行，
+    因此录音不必等待 LLM 处理完成。
     """
 
     session_id = (
@@ -287,15 +298,47 @@ def run_experiment_session(
         ReplyCoordinator()
     )
 
-    # 新链路执行器——统一链是唯一路径，始终创建
-    from src.core.clarification_executor import (
-        AnswerEntityExtractor,
-        ClarificationExecutor
+    # 执行器是会话级对象；默认创建真实执行器，
+    # 测试时可注入 Fake 以避免真实 LLM 提取器。
+    if executor is None:
+        from src.core.clarification_executor import (
+            AnswerEntityExtractor,
+            ClarificationExecutor
+        )
+        executor = ClarificationExecutor(
+            reply_coordinator,
+            entity_extractor=AnswerEntityExtractor(create_llm_client())
+        )
+
+    # 会话级"待确认结束"标志：后台识别到结束意图时置真，主循环读它。
+    pending_end_confirmation = {"value": False}
+
+    def display_segment_outcome(outcome) -> None:
+        """后台线程算完时立即显示结果；结束确认时另置标志。"""
+
+        display_observation(outcome.observation)
+        if outcome.review_summary is not None:
+            display_review_summary(outcome.review_summary)
+        print(f"第 {outcome.observation.segment_id} 段已保存。")
+        if outcome.observation.end_confirmation_requested:
+            print("是否结束本次实验记录？（请说“是的”或“不是”）")
+            pending_end_confirmation["value"] = True
+
+    worker = UnifiedSegmentProcessor(
+        session_id=session_id,
+        observer=observer,
+        executor=executor,
+        asr_store=asr_store,
+        event_store=event_store,
+        confirmation_store=confirmation_store,
+        reply_coordinator=reply_coordinator,
+        session_context=session_context,
+        display=display_segment_outcome,
     )
-    extractor = AnswerEntityExtractor(create_llm_client())
-    executor = ClarificationExecutor(
-        reply_coordinator,
-        entity_extractor=extractor
+
+    queue = OrderedTaskQueue(
+        worker=worker.process,
+        max_pending_tasks=4,
     )
 
     utterance_count = 0
@@ -348,12 +391,22 @@ def run_experiment_session(
             )
 
             # 结束命令不写入 ASR 文件，
-            # 也不发送给 LLM。
+            # 也不发送给后台。
             if is_end_session_command(
             asr_result.asr_transcript
             ):
                 print(
                     "\n检测到结束指令，"
+                    "停止接收新的实验口述。"
+                )
+                break
+
+            if (
+                pending_end_confirmation["value"]
+                and is_affirm_command(asr_result.asr_transcript)
+            ):
+                print(
+                    "\n确认结束，"
                     "停止接收新的实验口述。"
                 )
                 break
@@ -367,228 +420,17 @@ def run_experiment_session(
                 utterance_count
             )
 
-            # 统一链是唯一路径，观察器始终存在。
-            # 调用前的上下文快照只包含此前已成功落盘的事件。
-            # 当前段尚未加入上下文，避免模型把本轮输入当作历史。
-            recent_context = (
-                session_context.as_prompt_context()
-            )
-            observation = observer.observe(
-                request_id=f"unified-{session_id}-{segment_id}",
-                session_id=session_id,
-                segment_id=segment_id,
-                asr_result=asr_result,
-                reply_coordinator=reply_coordinator,
-                recent_context=recent_context,
-            )
-
-            # 统一链是唯一路径：只统计被采用为实验/降级证据的段。
-            # 查看、暂缓、弃权、失败观察等不占实验段计数，
-            # 否则结束时"提交 N 段实验口述"会虚高。
-            if observation.is_experiment_evidence:
-                experiment_segment_count += 1
-            # ASR 由 main 直接落盘，不再通过旧 SegmentProcessor 调 LLM。
-            # 有实验分析时一并保存事件，
-            # 非实验段（abstention/查看等）只存 ASR。
-            try:
-                asr_store.append(
-                    result=asr_result,
-                    session_id=session_id,
+            # 提交后台处理；返回本次提交前已完成的结果。
+            completed = queue.submit(
+                item=SegmentJob(
                     segment_id=segment_id,
+                    asr_result=asr_result,
                 )
-            except Exception as error:
-                print(
-                    "\nASR 保存失败："
-                    f"{type(error).__name__}: {error}"
-                )
-                print(
-                    "系统将继续监听。\n"
-                )
-                continue
-
-            if observation.accepted_analysis is not None:
-                outcome = (
-                    observation
-                    .accepted_analysis
-                    .to_process_outcome()
-                )
-                try:
-                    event_store.append_analysis(
-                        outcome
-                    )
-                except Exception as error:
-                    print(
-                        "\n事件保存失败："
-                        f"{type(error).__name__}: {error}"
-                    )
-                    print(
-                        "ASR 原文已保存，"
-                        "系统将继续监听。\n"
-                    )
-                else:
-                    # 事件落盘成功后，才把分析事件加入内存上下文。
-                    # 与旧 SegmentProcessor 第 5 步语义一致：
-                    # 上下文不包含“内存有但文件无”的事件。
-                    try:
-                        session_context.add_analysis(
-                            outcome.value
-                        )
-                    except Exception as error:
-                        print(
-                            "\n上下文更新失败："
-                            f"{type(error).__name__}: {error}"
-                        )
-
-            # commit：ASR 与事件证据都落盘成功后，
-            # 才执行状态变更。
-            # 无编号回答兜底（纯函数）：统一链弃权(no_action)时，
-            # 若恰好一个待确认问题且短句提供了其缺失字段，
-            # 则确定性判为回答并构造 ANSWER 动作，交给执行器执行。
-            # 任何不满足条件的情况（多问题/字段不匹配/实验记录）
-            # 都不会被路由成回答——实验事实不会被吞。
-            if (
-                observation.clarification_action == "no_action"
-                and observation.status
-                == UnifiedObservationStatus.OBSERVED
-            ):
-                unresolved = (
-                    reply_coordinator
-                    .active_clarifications()
-                )
-                fallback = decide_unnumbered_answer(
-                    pending_questions=unresolved,
-                    text=asr_result.asr_transcript,
-                )
-                if fallback.is_answer and len(unresolved) == 1:
-                    question = unresolved[0]
-                    # 显示字段也跟随实际动作（answer），
-                    # 避免出现"待确认动作=no_action 却已执行 answer"的自相矛盾。
-                    observation = replace(
-                        observation,
-                        clarification_action="answer",
-                        destination="clarification_context",
-                        permission="forward_context_candidate",
-                        pending_action=ClarificationAction(
-                            request_id=(
-                                f"unified-{session_id}-{segment_id}"
-                            ),
-                            session_id=session_id,
-                            segment_id=segment_id,
-                            asr_transcript=(
-                                asr_result.asr_transcript
-                            ),
-                            action_type=(
-                                ClarificationActionType.ANSWER
-                            ),
-                            mutation_permission=(
-                                ClarificationMutationPermission
-                                .PREPARE_UPDATE
-                            ),
-                            reason="无编号回答兜底",
-                            requires_evidence_persistence=True,
-                            target_clarification_id=(
-                                question.clarification_id
-                            ),
-                            target_display_number=(
-                                question.display_number
-                            ),
-                            expected_revision=question.revision,
-                            answer_text=(
-                                asr_result.asr_transcript
-                            ),
-                            supplied_entity_fields=fallback.fields,
-                        ),
-                    )
-
-            executed = False
-            execution_reason = None
-            executed_action_type = None
-            if observation.pending_action is not None:
-                try:
-                    exec_result = executor.execute(
-                        observation.pending_action
-                    )
-                    executed = exec_result.state_changed
-                    execution_reason = exec_result.reason
-                    executed_action_type = (
-                        observation.pending_action.action_type
-                    )
-                except Exception:
-                    execution_reason = "执行器内部异常"
-
-            # 确认答复持久化（原 confirmation 门卫职责，已搬进新链）：
-            # 只有 confirm 动作真实改变状态后，才写入确认记录。
-            if (
-                executed
-                and executed_action_type
-                == ClarificationActionType.CONFIRM
-                and observation.pending_action is not None
-            ):
-                action = observation.pending_action
-                try:
-                    target = reply_coordinator.find_clarification(
-                        action.target_clarification_id
-                    )
-                    if target is not None:
-                        confirmation_store.append(
-                            ConfirmationRecord
-                            .from_executed_confirmation(
-                                session_id=session_id,
-                                clarification_id=(
-                                    target.clarification_id
-                                ),
-                                source_segment_id=(
-                                    target.source_segment_id
-                                ),
-                                answer_segment_id=segment_id,
-                                answer_raw_text=(
-                                    asr_result.asr_transcript
-                                ),
-                                answer_audio_path=(
-                                    str(asr_result.audio_path)
-                                ),
-                                fully_resolved=(
-                                    not target.is_unresolved
-                                ),
-                                remaining_fields=(
-                                    target.missing_fields
-                                ),
-                            )
-                        )
-                except Exception as error:
-                    print(
-                        "\n确认记录保存失败："
-                        f"{type(error).__name__}: {error}"
-                    )
-                    print(
-                        "ASR 原文与问题状态已保存，"
-                        "系统将继续监听。\n"
-                    )
-
-            # 查看动作只读：显示待确认列表（REVIEW-OUTPUT-01）。
-            if (
-                observation.clarification_action == "review"
-                and observation.status
-                == UnifiedObservationStatus.OBSERVED
-            ):
-                display_review_result(
-                    reply_coordinator
-                )
-
-            observation = replace(
-                observation,
-                executed=executed,
-                execution_reason=execution_reason,
             )
-            display_observation(observation)
-
-            print(
-                f"第 {segment_id} 段"
-                "已保存。"
-            )
-            print(
-                "系统将立即继续监听。\n"
-            )
+            for task in completed:
+                if account_completed_task(task):
+                    experiment_segment_count += 1
+            print("系统将立即继续监听。\n")
 
         except TimeoutError:
             idle_seconds = (
@@ -638,6 +480,11 @@ def run_experiment_session(
             state_manager.change_to(
                 AssistantState.SESSION_ACTIVE
             )
+
+    # 排空后台：等待所有已提交任务完成并统计。
+    for task in queue.finish():
+        if account_completed_task(task):
+            experiment_segment_count += 1
 
     print(
         f"\n实验会话结束，"

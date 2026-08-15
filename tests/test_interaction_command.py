@@ -52,6 +52,25 @@ class InteractionCommandParserTests(unittest.TestCase):
                     command.requires_clarification_context
                 )
 
+    def test_parses_defer_targeted_commands(self):
+        cases = (
+            ("问题二先跳过", 2),
+            ("问题2先跳过", 2),
+            ("第二个问题先跳过", 2),
+            ("问题一先暂缓", 1),
+        )
+        for text, number in cases:
+            with self.subTest(text=text):
+                command = InteractionCommandParser.parse(text)
+                self.assertEqual(
+                    command.command_type,
+                    InteractionCommandType.DEFER_TARGETED,
+                )
+                self.assertEqual(
+                    command.target_question_number,
+                    number,
+                )
+
     def test_ignores_sensevoice_trailing_emotion_for_command(self):
         cases = (
             (

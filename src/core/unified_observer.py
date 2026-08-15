@@ -52,6 +52,7 @@ class UnifiedObservation:
         AcceptedExperimentAnalysis | None
     ) = None
     pending_action: ClarificationAction | None = None
+    end_confirmation_requested: bool = False
 
     def __post_init__(self) -> None:
         if self.status == UnifiedObservationStatus.OBSERVED:
@@ -144,6 +145,9 @@ class UnifiedObserver:
                 ),
                 accepted_analysis=accepted,
                 pending_action=action,
+                end_confirmation_requested=(
+                    result.end_confirmation_requested
+                ),
             )
         except Exception as error:
             return UnifiedObservation(

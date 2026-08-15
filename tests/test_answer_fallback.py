@@ -54,6 +54,7 @@ class DecideUnnumberedAnswerTests(unittest.TestCase):
         decision = decide_unnumbered_answer(
             pending_questions=[pending_question()],
             text="时间为10分钟",
+            current_segment_id=2,
         )
         self.assertTrue(decision.is_answer)
         self.assertEqual(decision.fields, ("duration",))
@@ -62,15 +63,26 @@ class DecideUnnumberedAnswerTests(unittest.TestCase):
         decision = decide_unnumbered_answer(
             pending_questions=[pending_question()],
             text="60摄氏度",
+            current_segment_id=2,
         )
         self.assertTrue(decision.is_answer)
         self.assertEqual(decision.fields, ("temperature",))
+
+    def test_non_adjacent_question_is_not_answer(self):
+        # 问题来源段=1，当前段=3（隔了一段）→ 即使字段匹配也不承认
+        decision = decide_unnumbered_answer(
+            pending_questions=[pending_question()],
+            text="时间为10分钟",
+            current_segment_id=3,
+        )
+        self.assertFalse(decision.is_answer)
 
     def test_single_question_unrelated_fields_are_not_answer(self):
         # 实验记录：提供 volume，与问题缺失字段无关 → 不当作回答
         decision = decide_unnumbered_answer(
             pending_questions=[pending_question()],
             text="加入5毫升缓冲液",
+            current_segment_id=2,
         )
         self.assertFalse(decision.is_answer)
 
@@ -84,6 +96,7 @@ class DecideUnnumberedAnswerTests(unittest.TestCase):
                 ),
             ],
             text="时间为10分钟",
+            current_segment_id=2,
         )
         self.assertFalse(decision.is_answer)
 
@@ -91,6 +104,7 @@ class DecideUnnumberedAnswerTests(unittest.TestCase):
         decision = decide_unnumbered_answer(
             pending_questions=[],
             text="时间为10分钟",
+            current_segment_id=2,
         )
         self.assertFalse(decision.is_answer)
 
@@ -98,6 +112,7 @@ class DecideUnnumberedAnswerTests(unittest.TestCase):
         decision = decide_unnumbered_answer(
             pending_questions=[pending_question()],
             text="先加入五毫升缓冲液，再加热到60摄氏度",
+            current_segment_id=2,
         )
         self.assertFalse(decision.is_answer)
 
@@ -106,6 +121,7 @@ class DecideUnnumberedAnswerTests(unittest.TestCase):
         decision = decide_unnumbered_answer(
             pending_questions=[pending_question()],
             text="加入5毫升缓冲液，加热到60摄氏度",
+            current_segment_id=2,
         )
         self.assertFalse(decision.is_answer)
 
@@ -113,6 +129,7 @@ class DecideUnnumberedAnswerTests(unittest.TestCase):
         decision = decide_unnumbered_answer(
             pending_questions=[pending_question()],
             text="我不知道",
+            current_segment_id=2,
         )
         self.assertFalse(decision.is_answer)
 

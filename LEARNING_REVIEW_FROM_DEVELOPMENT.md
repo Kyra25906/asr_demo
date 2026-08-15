@@ -2967,3 +2967,50 @@ ASR 保存失败 → `continue`（跳过整段，不继续事件保存）。因�
 - **换模型不崩塌**：ASR 已抽象成 `ASRBackend` Protocol + `create_asr_backend()` 工厂 + 统一 `ASRResult`，换模型 = 加适配器 + 改配置，下游无感；唯一边界是新适配器要填对 `asr_model_raw_text`/`asr_transcript` 两个证据字段。
 
 各已登记对应任务（`RESTORE-NONBLOCK-01`/`ANSWER-FALLBACK-ADJACENCY-01`/`GAPS-FIX-DEFER-01`/`GAPS-FIX-END-01` 方案一等），详见任务清单看板与交接文档"明天开工清单"。
+
+## 2026-08-15：恢复非阻塞录音——机制与业务分离 + 通用队列 + TDD 红绿
+
+- **本轮做了什么**：把 main.py 主循环里"同步串行"的六步业务流水线（观察→落盘 ASR→落盘事件+上下文→无编号兜底→执行→确认记录）搬进独立工人 `UnifiedSegmentProcessor`，用通用队列 `OrderedTaskQueue`（后台单线程+背压4）恢复"连续口述不卡"；拆掉两句谎话（111"旧流程继续"→"ASR 原文已保存"，320"无需等待"现为真）。全量 483 项通过；真实会话 20260815_094954 连说 10 段不卡、计数正确。
+
+- **知识点一：机制与业务分离（本轮主线）**。
+  - 白话解释：传送带（机制）不关心盒子里是饭还是书；后厨（业务）不关心传送带怎么转。"怎么跑"和"处理什么"要分开，改业务时才不会碰坏机制，机制还能跨领域复用。
+  - 专业术语：策略与机制的分离（Separation of Policy and Mechanism）、关注点分离（SoC）。判据 = "换领域测试"：把领域名词全换成别的领域，代码一字不改=机制，要重写=业务。
+  - 项目实际体现：`src/core/ordered_task_queue.py`（机制，零业务词）vs `src/core/unified_segment_processor.py`（业务，六步流水线）；`retry.py` 是纯机制范例，`answer_fallback.py` 是"机制壳+业务模式表"的混居范例。
+
+- **知识点二：泛型 + 依赖注入（回答"不想再写死接口"）**。
+  - 白话解释：上次旧队列 `SessionProcessingQueue` 把 `SegmentProcessor`/`LLMAnalysisResult` 焊死在接口上，换统一链就得重建。这次用"占位符"（泛型）把"盒子"和"内容"拆开，用"注入"把"工人"从参数传进来。
+  - 专业术语：泛型（Generics，`TypeVar`+`Generic[T]`）；依赖注入（Dependency Injection，构造函数注入）。
+  - 项目实际体现：`OrderedTaskQueue[In, Out]` 的 `worker: Callable[[In], Out]`——队列不认识任何业务类型，只认"给它一段活能还一段结果"；`UnifiedSegmentProcessor` 的 8 个依赖全部经 `__init__` 注入（测试才能塞 Fake）。
+
+- **知识点三：阻塞 vs 非阻塞 + 背压（本轮核心能力）**。
+  - 白话解释：阻塞=点外卖必须站在柜台等做完才走；非阻塞=下完单就走，后台做好叫你。背压=后台最多积压 4 单，满了就顶回去（防止无限堆积吃内存）。
+  - 专业术语：阻塞（Blocking）/非阻塞（Non-blocking）；后台线程（Background Thread）；背压（Back Pressure）。
+  - 项目实际体现：`OrderedTaskQueue` 单 worker + FIFO + `max_pending_tasks=4`；集成测试 `test_main_nonblocking.py` 用会阻塞的 Fake 观察器证明"第 1 段 LLM 还在算时，主线程已录第 2、3 段"。
+
+- **知识点四：TDD 红绿循环（本轮亲历）**。
+  - 白话解释：先写"会红的测试"（定义"对"长什么样），再写让它绿的实现。遇到红先分清"是测试错还是实现错"，别急着改实现。
+  - 专业术语：红绿循环（Red-Green）、测试先行（Test First）。
+  - 项目实际体现：写 `OrderedTaskQueue` 时先跑测试见 `ModuleNotFoundError`（预期红），再写实现转绿；中途一次"真红"是测试自己丢了 `submit()` 返回值（用法错，改测试非实现）。
+
+- **测试基线**：全量 483 项通过（+8 队列 +6 工人 +1 集成）。真实验收会话 20260815_094954 连说 10 段不卡、计数正确。
+
+## 2026-08-15（续）：三个硬 GAPS + TIMING-01——真实验收抓出单测盲区
+
+- **TIMING-01 结果及时显示**：之前"结果算完也要等下一句说完才显示"不是非阻塞的必然代价，而是"显示错绑在主线程 submit 上"。修法 = 把显示搬到后台 worker（`display` 回调注入 `UnifiedSegmentProcessor`），结果算完当场打印。白话：收银员（主线程）专心接单，后厨（后台）炒完菜自己喊"好了"。
+- **知识点：真实验收 ≠ 单测的补盲**。
+  - 白话：单测只验证"你想到要测的行为"；真实验收验证"用户实际走的那条路"。两者之间的缝，就是 bug 藏身处。
+  - 专业术语：测试盲区（Test Blind Spot）；端到端验收（End-to-End Validation）。
+  - 项目实际体现：DEFER 单测只测旧流程 `defer_current`（先播报才能暂缓），没测新链"创建→立刻暂缓"；真实验收说"这个问题先跳过"→弃权，才定位到 `register_clarification` 不设 `_current_clarification_id` 的根因。
+- **三个 GAPS 修了什么**：END-01（旁路不再对结束意图抛 ValueError，改产"请求结束确认"信号，主循环下一段 affirm 结束）；DEFER-01（reversible 的 LLM 候选放行 + 新问题创建即当前问题）；ADJACENCY-01（无编号回答加"来源段+1==当前段"紧邻约束）。
+- **测试基线**：全量 488 项通过。真实验收会话 20260815_111049（END 确认）、20260815_112341（DEFER 暂缓）。
+
+## 2026-08-15（再续）：GAPS 复验 + defer_targeted + 降级提示 + "是→是的"ASR 经验
+
+- **GAPS-REVERIFY-01**：真实旁路（只读，31 段）21/31 一致；③PH 大小写、⑤电流80毫安、D 自然结束语已闭环，②同音错词仍不稳定（走 ASR 层）。真实会话 115134 三验证点（E 仍需补充显示 / ③ PH 不过度确认 / D 完整结束）全闭环。
+- **defer_targeted**：新增 `DEFER_TARGETED` 命令类型，解析"问题N先跳过/第N个问题先跳过"，规划器按编号 `find_by_number` 定位，消除多问题场景下"这个问题"的歧义。
+- **降级人话**：`display_observation` 在降级 NOTE 时打印规范话术（取自 OUTPUT_PRESENTATION_POLICY.md），话术单一来源不自己造词。
+- **知识点：单字语音指令不可靠**。
+  - 白话：一个字的命令（"是"）太短，VAD 容易截掉开头、ASR 容易听岔（真实听成英文 "Sure."）；两个字的"是的"就稳得多。语音交互里"引导用户说更长的确认词"是低成本高收益的工程经验。
+  - 专业术语：极短指令脆弱性（Ultra-short Utterance Fragility）、语音确认词设计（Wake/Confirmation Word Design）。
+  - 项目实际体现：结束确认提示从"请说'是'或'不是'"改为"请说'是的'或'不是'"；根治走 ASR 层（AUDIO-PREROLL 截音 + 短指令处理）。
+- **测试基线**：全量 490 项通过。硬问题清零，进 PRESENT。

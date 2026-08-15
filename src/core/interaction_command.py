@@ -13,6 +13,7 @@ class InteractionCommandType(str, Enum):
     AFFIRM = "affirm"
     DENY = "deny"
     TARGETED_ANSWER = "targeted_answer"
+    DEFER_TARGETED = "defer_targeted"
 
 
 @dataclass(frozen=True)
@@ -31,17 +32,20 @@ class InteractionCommand:
     answer_text: str | None = None
 
     def __post_init__(self) -> None:
-        if self.command_type == InteractionCommandType.TARGETED_ANSWER:
+        if self.command_type in {
+            InteractionCommandType.TARGETED_ANSWER,
+            InteractionCommandType.DEFER_TARGETED,
+        }:
             if (
                 self.target_question_number is None
                 or self.target_question_number <= 0
             ):
                 raise ValueError(
-                    "指定问题答复必须包含大于 0 的问题编号。"
+                    "指定问题命令必须包含大于 0 的问题编号。"
                 )
         elif self.target_question_number is not None:
             raise ValueError(
-                "只有指定问题答复可以包含问题编号。"
+                "只有指定问题命令可以包含问题编号。"
             )
 
     @property
@@ -52,6 +56,7 @@ class InteractionCommand:
     def requires_clarification_context(self) -> bool:
         return self.command_type in {
             InteractionCommandType.DEFER_CURRENT,
+            InteractionCommandType.DEFER_TARGETED,
             InteractionCommandType.REVIEW_PENDING,
             InteractionCommandType.AFFIRM,
             InteractionCommandType.DENY,
@@ -148,6 +153,18 @@ class InteractionCommandParser:
         ),
     )
 
+    # 按编号暂缓：问题N先跳过 / 第N个问题先跳过（N 支持数字或中文）
+    DEFER_TARGETED_PATTERNS = (
+        re.compile(
+            r"^问题(?P<number>\d+|[一二三四五六七八九十]+)"
+            r"(?:先跳过|先暂缓|跳过|暂缓)$"
+        ),
+        re.compile(
+            r"^第?(?P<number>\d+|[一二三四五六七八九十]+)"
+            r"个问题(?:先跳过|先暂缓|跳过|暂缓)$"
+        ),
+    )
+
     @classmethod
     def parse(
         cls,
@@ -182,6 +199,13 @@ class InteractionCommandParser:
                 raw_text,
                 normalized,
             )
+
+        defer_targeted = cls._parse_defer_targeted(
+            raw_text,
+            normalized,
+        )
+        if defer_targeted is not None:
+            return defer_targeted
 
         targeted_answer = cls._parse_targeted_answer(
             raw_text,
@@ -235,6 +259,32 @@ class InteractionCommandParser:
         return normalized.rstrip(
             InteractionCommandParser.SENSEVOICE_TRAILING_EMOTIONS
         )
+
+    @classmethod
+    def _parse_defer_targeted(
+        cls,
+        raw_text: str,
+        normalized: str,
+    ) -> InteractionCommand | None:
+        for pattern in cls.DEFER_TARGETED_PATTERNS:
+            match = pattern.fullmatch(normalized)
+            if match is None:
+                continue
+
+            number = cls._parse_question_number(
+                match.group("number")
+            )
+            if number is None or number <= 0:
+                return None
+
+            return InteractionCommand(
+                command_type=InteractionCommandType.DEFER_TARGETED,
+                raw_text=raw_text,
+                normalized_text=normalized,
+                target_question_number=number,
+            )
+
+        return None
 
     @classmethod
     def _parse_targeted_answer(

@@ -60,14 +60,17 @@ def decide_unnumbered_answer(
     *,
     pending_questions: Sequence["PendingClarification"],
     text: str,
+    current_segment_id: int,
 ) -> UnnumberedAnswerDecision:
     """判定一段无编号文本是否是对唯一待确认问题的回答。
 
     规则（全部满足才算回答）：
     1. 恰好一个待确认问题（多个或零个都不猜）；
     2. 文本是短句（长度上限），避免冗长陈述；
-    3. 文本提供了该问题缺失字段中的至少一个；
-    4. 文本提供的所有字段都属于该问题缺失字段
+    3. 问题必须紧邻：问题来源段 + 1 == 当前段，
+       否则无编号口述可能是隔了几段的新实验事实，须带编号；
+    4. 文本提供了该问题缺失字段中的至少一个；
+    5. 文本提供的所有字段都属于该问题缺失字段
        （夹带无关字段 = 新实验事实，如"加入5毫升缓冲液，加热到60摄氏度"）。
 
     不满足任何一条 → 非回答（保持原分类）。这保证了
@@ -82,11 +85,15 @@ def decide_unnumbered_answer(
     if len(text) > _MAX_ANSWER_TEXT_LENGTH:
         return UnnumberedAnswerDecision(is_answer=False)
 
+    question = pending_questions[0]
+    # 规则3：问题必须紧邻（来源段+1 == 当前段）。
+    if question.source_segment_id + 1 != current_segment_id:
+        return UnnumberedAnswerDecision(is_answer=False)
+
     extracted = extract_entity_fields(text)
     if not extracted:
         return UnnumberedAnswerDecision(is_answer=False)
 
-    question = pending_questions[0]
     missing = set(question.missing_fields)
     # 答案只能提供问题缺的字段：夹带无关字段（体积/浓度等）视为实验陈述。
     if not set(extracted).issubset(missing):

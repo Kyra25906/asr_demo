@@ -48,6 +48,11 @@ class FixedAcceptanceProcessor:
                 target_question_number=2,
                 answer_text="五分钟",
             )
+        if request.raw_text == "今天先记录到这里吧。":
+            return self._control(
+                request.raw_text,
+                InteractionCommandType.END_SESSION,
+            )
         if request.raw_text == "模拟模型失败。":
             value = build_degraded_understanding(
                 raw_text=request.raw_text,
@@ -167,6 +172,15 @@ class UnifiedAcceptanceBypassTests(unittest.TestCase):
             ClarificationActionType.REVIEW,
         )
 
+    def test_llm_end_session_requests_confirmation_not_raise(self):
+        result = self.inspect("今天先记录到这里吧。")
+        self.assertTrue(result.end_confirmation_requested)
+        self.assertIsNone(result.accepted_experiment)
+        self.assertEqual(
+            result.clarification_action.action_type,
+            ClarificationActionType.NO_ACTION,
+        )
+
     def test_llm_natural_review_forms_only_read_only_review(self):
         result = self.inspect("我还有什么没回答？")
         self.assertEqual(self.processor.calls, ["我还有什么没回答？"])
@@ -186,6 +200,15 @@ class UnifiedAcceptanceBypassTests(unittest.TestCase):
         self.assertEqual(action.action_type, ClarificationActionType.DEFER)
         self.assertEqual(action.expected_revision, item.revision)
         self.assertTrue(item.is_active)
+
+    def test_exact_defer_targeted_defers_numbered_question(self):
+        item2 = clarification(clarification_id="clarification-2", number=2)
+        context = ClarificationContextSnapshot((item2,))
+        result = self.inspect("问题二先跳过。", context=context)
+        action = result.clarification_action
+        self.assertEqual(action.action_type, ClarificationActionType.DEFER)
+        self.assertEqual(action.target_clarification_id, "clarification-2")
+        self.assertEqual(action.expected_revision, item2.revision)
 
     def test_exact_targeted_answer_reaches_only_named_question(self):
         first = clarification("clarification-1", 1)

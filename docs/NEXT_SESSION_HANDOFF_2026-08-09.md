@@ -1,6 +1,6 @@
 # asr_demo 当前工作区交接说明
 
-最后整理：2026-08-14
+最后整理：2026-08-15
 
 > 本文件是下一会话的短入口，不保存完整历史。任务状态以
 > `PROJECT_TASK_CHECKLIST.md` 为准，架构原因见 `PROJECT_ARCHITECTURE.md`，
@@ -10,7 +10,9 @@
 
 - 正式解释器：Python 3.11.9，项目 `.venv` 可用。
 - 核心依赖和 `src.main` 导入成功；冷启动约 113 秒。
-- 全量自动测试：`Ran 468 tests in 1.127s — OK`。
+- 全量自动测试：`Ran 483 tests — OK`（含 RESTORE-NONBLOCK-01 非阻塞 15 项）。
+- `RESTORE-NONBLOCK-01`（P0）恢复非阻塞录音 + 拆两句谎话：**REAL_OK**（会话 20260815_094954 连说 10 段不卡、计数正确；新建 `OrderedTaskQueue` + `UnifiedSegmentProcessor`，main 主循环改为"录音→提交后台→显示"；两句谎话已拆）。体验=用户接受当前"结果延后显示"节奏，前瞻要求 **TTS 不乱序朗读**（登记 TIMING-02）。
+- 三个硬 GAPS + TIMING-01：**END-01/DEFER-01/TIMING-01 REAL_OK、ADJACENCY-01 AUTO_OK**（会话 20260815_111049/112341）。真实验收抓出并修复"`register_clarification` 不设 current 导致暂缓弃权"根因（新问题创建即当前问题）。全量 **488 项**。**defer_targeted（按编号暂缓"问题二先跳过"）仍 TODO**。
 - `MAIN-SESSION-CONTEXT-01`/`MAIN-RUNTIME-HARDEN-01`/`INTENT-02-CLEANUP-FLAGS-01`/`INTENT-02-CLEANUP-SUBMIT-01`/`INTENT-02-CLEANUP-COMMAND-01`：全部 REAL_OK。
 - A+B（任务 34/35/36）与显示一致性：**全部 REAL_OK**（会话 `20260814_113958` 验证兜底显示自洽）。
 - `INTENT-02-CLEANUP-NAMING-01` 去影子命名：**AUTO_OK**（shadow 全部改为正式执行链命名：`UnifiedObserver`/`UnifiedObservation`/`display_observation`/`unified-` 前缀/`[统一链]` 显示；468 项通过），待一次轻量真实会话不退化复验。
@@ -28,12 +30,14 @@
 
 **明天开工清单（2026-08-14 夜定）**：按"硬问题清零即进 PRESENT"的闸门，先做硬问题：
 
-1. `RESTORE-NONBLOCK-01`（P0）：恢复非阻塞录音 + 拆两句谎话（main.py:320"无需等待"、main.py:111"旧流程继续"）
-2. `GAPS-FIX-END-01`（已改方案一）：结束语非精准命中 → 追问 → 肯定后结束（把 END_SESSION 的 REQUEST_CONFIRMATION 闭环）
-3. `GAPS-FIX-DEFER-01`：DEFER 的 reversible=True 接上（LLM 候选走上下文校验，不再弃权）+ defer_targeted 真实验收
-4. `ANSWER-FALLBACK-ADJACENCY-01`：无编号兜底加"紧邻"约束（问题来源段+1 == 当前段）
-5. `RESTORE-DEGRADED-HINT-01`（P1）：LLM 降级给用户一句人话
-6. `GAPS-REVERIFY-01`：兜底 + 各缺口复测
+1. ~~`RESTORE-NONBLOCK-01`~~ ✅ **已完成 REAL_OK（2026-08-15，会话 20260815_094954）**；开工从第 2 项起
+2. ~~`GAPS-FIX-END-01`~~ ✅ **REAL_OK**（会话 111049：追问"是否结束？"→"是"→结束）
+3. ~~`GAPS-FIX-DEFER-01`~~ ✅ **REAL_OK**（会话 112341：暂缓生效；defer_targeted 按编号暂缓已补）
+4. ~~`ANSWER-FALLBACK-ADJACENCY-01`~~ ✅ **AUTO_OK**（紧邻约束 + 单测）
+5. ~~`RESTORE-DEGRADED-HINT-01`~~ ✅ **REAL_OK**（降级打印人话"原始记录已保存，结构化处理暂时不可用"）
+6. ~~`GAPS-REVERIFY-01`~~ ✅ **REAL_OK**（真实旁路 21/31；真实会话 E/③/D 闭环）
+
+> **硬问题已清零，下一步进 PRESENT-INTEGRATE-01**。遗留：②同音错词确认（走 ASR 层）、"是"单字易被 ASR 听成"Sure."（已改提示语引导说"是的"，根治走 ASR 层）。
 
 软问题（显示/话术/误识别，与 PRESENT 并行、不阻塞）：`SYNC-UI-CLAIMS-01` 改文案、`GAPS-FIX-ANSWER-HINT-01` 编号提示、UX 系列、`ASR-CMD-02-POSTPROCESS-01`（等组长定演示领域后重启采集接入）。
 

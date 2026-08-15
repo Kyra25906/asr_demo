@@ -128,15 +128,11 @@ class ReplyCoordinatorLifecycleTests(unittest.TestCase):
             ),
         )
 
-    def test_only_delivered_question_can_be_deferred(self):
+    def test_created_question_can_be_deferred(self):
         coordinator = ReplyCoordinator()
         self._register_question(coordinator, segment_id=1)
 
-        self.assertIsNone(
-            coordinator.defer_current(segment_id=2)
-        )
-
-        coordinator.pop_next_reply()
+        # 统一链下创建即交付（立即显示），可直接暂缓，无需 pop_next_reply。
         deferred = coordinator.defer_current(segment_id=2)
 
         self.assertIsNotNone(deferred)

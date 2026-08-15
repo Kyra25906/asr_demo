@@ -44,6 +44,18 @@ def make_analysis(
 
 
 class ReplyCoordinatorTests(unittest.TestCase):
+    def test_register_clarification_makes_it_current(self):
+        coordinator = ReplyCoordinator()
+        new = coordinator.register_clarification(
+            segment_id=3,
+            raw_text="将溶液加热。",
+            question="加热到什么温度？",
+            missing_fields=("temperature",),
+        )
+        current = coordinator.current_clarification()
+        self.assertIsNotNone(current)
+        self.assertEqual(current.clarification_id, new.clarification_id)
+
     def test_registers_question_with_source(self):
         coordinator = ReplyCoordinator()
         coordinator.ingest_analysis(

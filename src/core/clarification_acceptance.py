@@ -247,6 +247,19 @@ class ClarificationActionPlanner:
                 ClarificationActionType.DEFER,
                 reason="准备暂缓当前ACTIVE问题。",
             )
+        if command_type == InteractionCommandType.DEFER_TARGETED:
+            number = command.target_question_number
+            target = (
+                context.find_by_number(number)
+                if number is not None
+                else None
+            )
+            return cls._target_or_no_action(
+                request,
+                target,
+                ClarificationActionType.DEFER,
+                reason="准备按编号暂缓指定问题。",
+            )
         if command_type in {
             InteractionCommandType.AFFIRM,
             InteractionCommandType.DENY,
@@ -296,6 +309,18 @@ class ClarificationActionPlanner:
                 reason="准备把明确编号的答复交给目标问题。",
             )
         raise ValueError("该控制类型不属于待确认动作采用范围。")
+
+    @classmethod
+    def from_end_confirmation(
+        cls,
+        request: DispatchExecutionRequest,
+    ) -> ClarificationAction:
+        """结束确认不是待确认问题动作，只产生无副作用的 NO_ACTION。"""
+
+        return cls._no_action(
+            request,
+            "LLM 识别到结束意图，需用户确认后才能结束会话。",
+        )
 
     @classmethod
     def from_experiment(

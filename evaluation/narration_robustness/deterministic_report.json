@@ -1,10 +1,10 @@
 {
   "session_id": "narration_robustness_20260814",
   "schema_version": 1,
-  "segment_count": 28,
+  "segment_count": 31,
   "categories": {
-    "零误触发": 13,
-    "依赖LLM容错": 7,
+    "零误触发": 14,
+    "依赖LLM容错": 9,
     "精确命中": 5,
     "已知限制": 3
   },
@@ -256,6 +256,33 @@
       "segment_id": 28,
       "challenge_type": "end_session",
       "observed_asr_text": "今天先记录到这里吧。",
+      "exact_command": "normal",
+      "exact_target_question_number": null,
+      "category": "依赖LLM容错",
+      "detail": "精确解析为normal，需LLM语义容错"
+    },
+    {
+      "segment_id": 29,
+      "challenge_type": "asr_noise_entity",
+      "observed_asr_text": "先加入防生缓冲液。",
+      "exact_command": "normal",
+      "exact_target_question_number": null,
+      "category": "零误触发",
+      "detail": "实验段不触发任何控制命令"
+    },
+    {
+      "segment_id": 30,
+      "challenge_type": "uncertain_semantics",
+      "observed_asr_text": "제가.",
+      "exact_command": "normal",
+      "exact_target_question_number": null,
+      "category": "依赖LLM容错",
+      "detail": "精确解析为normal，需LLM语义容错"
+    },
+    {
+      "segment_id": 31,
+      "challenge_type": "asr_truncated",
+      "observed_asr_text": ".别束实验记录。",
       "exact_command": "normal",
       "exact_target_question_number": null,
       "category": "依赖LLM容错",
