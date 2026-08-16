@@ -8,11 +8,11 @@ presentation pump 取货。
 from __future__ import annotations
 
 import threading
+import time
 from collections import deque
 from typing import Iterable, Sequence
 
-from src.core.presentation_intent import PresentationIntent
-from src.core.presentation_message import MessageKind
+from src.core.presentation_intent import MessageKind, PresentationIntent
 
 
 def coordinate(
@@ -88,12 +88,15 @@ class PresentationCoordinator:
     def __init__(self) -> None:
         self._pending: deque[PresentationIntent] = deque()
         self._condition = threading.Condition()
+        self._unfinished_count = 0
 
     def submit(self, intents: Iterable[PresentationIntent]) -> None:
         """投递一批 Intent（多线程可并发调用）。"""
 
+        batch = tuple(intents)
         with self._condition:
-            self._pending.extend(intents)
+            self._pending.extend(batch)
+            self._unfinished_count += len(batch)
             self._condition.notify_all()
 
     def drain(
@@ -115,9 +118,38 @@ class PresentationCoordinator:
             self._pending.clear()
 
             deliver, deferred = coordinate(batch)
+            dropped_count = len(batch) - len(deliver) - len(deferred)
+            self._unfinished_count -= dropped_count
             if deferred:
                 self._pending.extendleft(reversed(deferred))
+            if self._unfinished_count == 0:
+                self._condition.notify_all()
             return deliver
+
+    def mark_completed(self) -> None:
+        """标记一条已取走意图的交付尝试完成。"""
+
+        with self._condition:
+            if self._unfinished_count <= 0:
+                raise RuntimeError("没有可标记完成的呈现意图。")
+            self._unfinished_count -= 1
+            if self._unfinished_count == 0:
+                self._condition.notify_all()
+
+    def join(self, timeout: float | None = None) -> bool:
+        """等待已投递意图全部完成或被语义去重。"""
+
+        deadline = None if timeout is None else time.monotonic() + timeout
+        with self._condition:
+            while self._unfinished_count > 0:
+                if deadline is None:
+                    self._condition.wait()
+                    continue
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return False
+                self._condition.wait(remaining)
+            return True
 
     @property
     def pending_count(self) -> int:
@@ -125,3 +157,10 @@ class PresentationCoordinator:
 
         with self._condition:
             return len(self._pending)
+
+    @property
+    def unfinished_count(self) -> int:
+        """尚未完成的意图数：包含 pending、deferred 和 in-flight。"""
+
+        with self._condition:
+            return self._unfinished_count

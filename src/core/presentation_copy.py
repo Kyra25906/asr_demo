@@ -4,8 +4,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Mapping
 
-from src.core.presentation_intent import PresentationIntent
-from src.core.presentation_message import MessageKind
+from src.core.presentation_intent import MessageKind, PresentationIntent
 
 
 class RecordAckResult(str, Enum):
@@ -21,6 +20,15 @@ class ConfirmationAckResult(str, Enum):
 
     ANSWERED = "answered"
     CONFIRMED = "confirmed"
+
+
+class ProgramStatus(str, Enum):
+    """程序级用户可见状态；不与会话内业务阶段混用。"""
+
+    STARTING = "starting"
+    READY = "ready"
+    WAITING = "waiting"
+    EXITED = "exited"
 
 
 @dataclass(frozen=True)
@@ -59,10 +67,8 @@ _FIELD_LABELS = {
 
 
 _PASSTHROUGH_KINDS = frozenset({
-    MessageKind.WAKE_ACK,
     MessageKind.TRANSCRIPT,
     MessageKind.STAGE_SUMMARY,
-    MessageKind.SESSION_SUMMARY,
     MessageKind.SYSTEM_ISSUE,
 })
 
@@ -75,6 +81,10 @@ def copy_for_intent(
     """生成最终文案；支持记录回执、追问、回答/确认回执、暂缓、查看列表与固定提示。"""
 
     _validate_ui_mode(ui_mode)
+    if intent.kind == MessageKind.PROGRAM_STATUS:
+        return _copy_program_status(intent)
+    if intent.kind == MessageKind.WAKE_ACK:
+        return _copy_wake_ack(intent)
     if intent.kind in _PASSTHROUGH_KINDS:
         return _copy_passthrough(intent)
     if intent.kind == MessageKind.RECORD_ACK:
@@ -87,12 +97,43 @@ def copy_for_intent(
         return _copy_deferred(intent, ui_mode)
     if intent.kind == MessageKind.CLARIFICATION_REVIEW:
         return _copy_review(intent)
+    if intent.kind == MessageKind.SESSION_CLOSING_SUMMARY:
+        return _copy_session_closing_summary(intent)
     raise ValueError(f"文案目录暂不支持消息类型 {intent.kind.value}。")
 
 
 def _validate_ui_mode(ui_mode: str) -> None:
     if ui_mode not in {"user", "admin"}:
         raise ValueError("ui_mode 必须是 user 或 admin。")
+
+
+def _copy_program_status(intent: PresentationIntent) -> str:
+    try:
+        status = ProgramStatus(intent.args["status"])
+    except KeyError as error:
+        raise ValueError("PROGRAM_STATUS 缺少 status 参数。") from error
+    except ValueError as error:
+        raise ValueError("PROGRAM_STATUS 的 status 参数不受支持。") from error
+
+    return {
+        ProgramStatus.STARTING: "实验语音智能体正在启动，请稍候。",
+        ProgramStatus.READY: (
+            "实验语音智能体已就绪，正在等待唤醒。"
+            "按 Ctrl+C 可以退出程序。"
+        ),
+        ProgramStatus.WAITING: (
+            "已返回待机。可以再次说“小科小科”开始新会话；"
+            "按 Ctrl+C 退出程序。"
+        ),
+        ProgramStatus.EXITED: "已退出实验语音智能体。",
+    }[status]
+
+
+def _copy_wake_ack(intent: PresentationIntent) -> str:
+    keyword = intent.args.get("keyword")
+    if not isinstance(keyword, str) or not keyword.strip():
+        raise ValueError("WAKE_ACK 必须包含非空 keyword。")
+    return f"唤醒成功：{keyword.strip()}"
 
 
 def _copy_passthrough(intent: PresentationIntent) -> str:
@@ -197,6 +238,44 @@ def _copy_review(intent: PresentationIntent) -> str:
         return "当前没有待确认问题。"
 
     lines = [f"当前共有 {len(items)} 个待确认问题："]
+    for item in items:
+        status = "已暂缓" if item.is_deferred else "待回答"
+        lines.append(f"- 问题 {item.display_number}（{status}）：{item.question}")
+    return "\n".join(lines)
+
+
+def _copy_session_closing_summary(intent: PresentationIntent) -> str:
+    """生成 END_ONLY 单一结束摘要。
+
+    摘要同时承载已记录实验步骤数和未解决待确认项，避免结束阶段
+    再另行投递 CLARIFICATION_REVIEW。
+    """
+
+    experiment_step_count = intent.args.get("experiment_step_count")
+    if (
+        not isinstance(experiment_step_count, int)
+        or isinstance(experiment_step_count, bool)
+        or experiment_step_count < 0
+    ):
+        raise ValueError("experiment_step_count 必须是非负整数。")
+
+    items = intent.args.get("pending_items")
+    if not isinstance(items, tuple) or not all(
+        isinstance(item, ReviewItem) for item in items
+    ):
+        raise ValueError(
+            "SESSION_CLOSING_SUMMARY 的 pending_items 必须是 ReviewItem 元组。"
+        )
+
+    lines = [
+        "实验记录会话已结束。",
+        f"本次共记录 {experiment_step_count} 个实验步骤。",
+    ]
+    if not items:
+        lines.append("没有待确认问题。")
+        return "\n".join(lines)
+
+    lines.append(f"仍有 {len(items)} 个待确认问题：")
     for item in items:
         status = "已暂缓" if item.is_deferred else "待回答"
         lines.append(f"- 问题 {item.display_number}（{status}）：{item.question}")

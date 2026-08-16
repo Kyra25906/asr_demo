@@ -4,10 +4,10 @@ from src.core.presentation_coordinator import (
     PresentationCoordinator,
     coordinate,
 )
-from src.core.presentation_intent import PresentationIntent
-from src.core.presentation_message import (
+from src.core.presentation_intent import (
     MessageKind,
     MessagePriority,
+    PresentationIntent,
     ScreenTarget,
 )
 
@@ -156,6 +156,57 @@ class CoordinatorQueueTests(unittest.TestCase):
         self.assertEqual(coordinator.pending_count, 0)
         coordinator.submit([_record_ack("r1", 1)])
         self.assertEqual(coordinator.pending_count, 1)
+
+    def test_join_waits_for_drained_intent_to_be_marked_complete(self):
+        coordinator = PresentationCoordinator()
+        coordinator.submit([_record_ack("r1", 1)])
+
+        self.assertEqual(coordinator.unfinished_count, 1)
+        self.assertEqual(len(coordinator.drain()), 1)
+        self.assertEqual(coordinator.pending_count, 0)
+        self.assertFalse(coordinator.join(timeout=0.01))
+
+        coordinator.mark_completed()
+
+        self.assertTrue(coordinator.join(timeout=0.01))
+        self.assertEqual(coordinator.unfinished_count, 0)
+
+    def test_adjacent_duplicate_is_accounted_without_mark_completed(self):
+        coordinator = PresentationCoordinator()
+        coordinator.submit((
+            _record_ack("r1", 1),
+            _record_ack("r2", 1),
+        ))
+
+        delivered = coordinator.drain()
+
+        self.assertEqual(len(delivered), 1)
+        self.assertEqual(coordinator.unfinished_count, 1)
+        coordinator.mark_completed()
+        self.assertTrue(coordinator.join(timeout=0.01))
+
+    def test_deferred_question_remains_unfinished_until_next_delivery(self):
+        coordinator = PresentationCoordinator()
+        coordinator.submit(
+            _clarification(name)
+            for name in ("q1", "q2")
+        )
+
+        self.assertEqual(len(coordinator.drain()), 1)
+        coordinator.mark_completed()
+        self.assertEqual(coordinator.pending_count, 1)
+        self.assertEqual(coordinator.unfinished_count, 1)
+        self.assertFalse(coordinator.join(timeout=0.01))
+
+        self.assertEqual(len(coordinator.drain()), 1)
+        coordinator.mark_completed()
+        self.assertTrue(coordinator.join(timeout=0.01))
+
+    def test_mark_completed_rejects_unbalanced_call(self):
+        coordinator = PresentationCoordinator()
+
+        with self.assertRaises(RuntimeError):
+            coordinator.mark_completed()
 
 
 if __name__ == "__main__":

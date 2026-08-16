@@ -43,6 +43,65 @@
 
 > PRESENT 当前停靠点：子步 A + B-1/B-2/B-3/B-4 全部完成。B-4 真实验收（会话 20260815_212615）通过项：编号分离、结束汇总用户语言、回执及时（维4/5/9✓）；**发现 4 个软问题已登记看板 19-22**：①开发输出泄漏（`PRESENT-FIX-LEAK-01`）、②投影层 no_action 无容错反馈（`PRESENT-NOACTION-FEEDBACK-01`）、③**LLM 缺字段追问漂移**（`LLM-FOLLOWUP-DRIFT-01`，prompt 未变、模型服务端漂移，缺确定性兜底）、④ASR 误识别走 ASR 线。全量 562 项。
 
+> **PRESENT 呈现筛选决策（用户 2026-08-16）**：不把旧 `print()` 原样迁入新链路，按
+> `ONCE_PER_SESSION / ON_EVENT / ON_STATE_CHANGE / ON_REQUEST / END_ONLY / LOG_ONLY`
+> 六类准入。会话说明与“请开始口述”只出现一次；删除每段“系统将立即继续监听”及
+> VAD/录音过程噪声；无变化时静默监听；结束信息合并成单一摘要。完整合同见
+> `docs/PRESENT_DESIGN.md` 第 13 节。后续 QUERY/DENY/WARNING/TTS 均必须复用该时机分类。
+
+> **`PRESENT-ADMISSION-01` 第一刀 AUTO_OK（2026-08-16）**：首次“请开始口述”并入
+> 会话开始块，只显示一次；删除每段“系统将立即继续监听”。集成测试证明三段会话中
+> 两条一次性提示各出现 1 次、循环噪声为 0，同时逐段失败回执和结束反馈仍存在；
+> 专项 1/1、全量 562/562 通过。下一刀处理 `LOG_ONLY` 输出泄漏。
+
+> **`PRESENT-ADMISSION-01` 第二刀 AUTO_OK（2026-08-16）**：`vad_recorder.py` 的模型加载、
+> 麦克风就绪、人声检测、溢出、音频时长和保存路径，`wakeword/detector.py` 的模型加载、
+> 待唤醒和溢出，以及手动 recorder 的设备状态/保存路径均由直接 `print` 改为模块日志；
+> 手动录音器“正在录音，再按 Enter 结束”是完成操作必需的提示，明确保留。新增测试证明
+> VAD 默认内部状态进入日志且不调用 print；VAD 专项 6/6、全量 563/563 通过。尚未做
+> FunASR 进度条屏蔽和真实 user/admin 会话走查，`PRESENT-FIX-LEAK-01` 仍未闭环。
+
+> **`PRESENT-ADMISSION-01` 第三刀 AUTO_OK（2026-08-16）**：新增独立
+> `IdleNoticeTracker`，把连续 TimeoutError 映射为“首次等待→约60秒→约30秒”三个
+> 用户可见阶段；同阶段不重复，检测到新口述后 reset，达到总超时仍由 main 结束会话。
+> 时间规则专项 5/5、会话集成 1/1、全量 568/568 通过。尚未真实等待五分钟验收。
+
+> **PRESENT 收口审计补记（用户 2026-08-16）**：新增看板 25–28，防止此前口头审计结论
+> 丢失：①`PRESENT-FEEDBACK-REGRESSION-01` 补回启动/唤醒/退出及“零待确认项”明确反馈；
+> ②`PRESENT-PUMP-FLUSH-01` 用真正 flush/join 或 in-flight 完成确认替代
+> `pending_count == 0` 猜测，作为 TTS/慢 sink 前置；③`PRESENT-EXTENSION-SEAMS-01`
+> 固定 QUERY/DENY/WARNING/导出走结构化 projection→Intent，并定义 WARNING 抢占规则；
+> ④`PRESENT-LEGACY-MESSAGE-CLEANUP-01` 删除旧 PresentationMessage 双轨。
+
+> **PRESENT 当前范围起初固定为 12 项（用户 2026-08-16）**：任务清单 3.1A 新增统一收口表，
+> 覆盖呈现准入、必要反馈、pump flush、旧消息清理、泄漏、no_action、扩展接缝、
+> user/admin、文案一致、最终真实验收、回答编号提示、事件提示音；新增缺失的独立验收任务
+> `PRESENT-FINAL-UX-VERIFY-01`。推进时以该表为 PRESENT 当前统一入口，不再从旧 H2 表重复计数。
+
+> **SUMMARY 命名盘点（用户 2026-08-16）**：当前 PRESENT 枚举
+> 原 `MessageKind.SESSION_SUMMARY` 的生产直接引用仅为枚举定义、copy 文案分派、main 结束投递；
+> 它实际只是即时收尾回执。后续 `LLM-10` 已正式规划领域 `SessionSummary`（步骤/观察/异常/
+> 遗留问题），`SESSION-02/EXPORT-01` 又以 `SessionRecord` 为聚合和导出来源，继续同名会造成
+> 显示回执与正式内容总结混淆。已登记 `PRESENT-CLOSING-NAME-01`：改为
+> `SESSION_CLOSING_SUMMARY` 或等效明确命名；作为清单第13项，但不扩大为新总结链路。
+
+> **记录预览决策（用户 2026-08-16）**：新增 `PRESENT-RECORD-PREVIEW-01`，收口清单
+> 在收尾命名成为第13项后，再由13项更新为14项。普通 user 不再以原始 ASR 作为主输出，改为显示系统最终采纳的
+> `accepted_analysis.events[].normalized_text`，例如“已记录实验步骤2：将溶液加热至60℃”；
+> 原始 ASR 必须继续持久化，并在 admin/debug 或按需详情可查。实施分 A 对照透传、B 隐藏
+> user TRANSCRIPT、C 真实语音验收三步；不启用当前统一 Prompt 明确为 null 的
+> `assistant_reply`，不增加第二次 LLM 调用。
+
+> **PRESENT 交付链路架构决策（用户 2026-08-16）**：新增
+> `PRESENT-DELIVERY-BOUNDARY-01`，收口清单由14项更新为15项。用户不排斥统一链路，反对的是
+> 没有现实需求支撑的过度抽象。现在固定结构化结果→projection→`PresentationIntent`→
+> Coordinator→Pump→Renderer→Sink 的唯一交付合同：Coordinator 只管排序/去重/生命周期，
+> Pump 只执行交付并报告 complete/fail，Renderer 只做纯格式化，Sink 是唯一 I/O；普通新消息
+> 不应修改 Coordinator/Pump。未来采用渐进扩展：QUERY/DENY/导出状态随业务增加 projection/copy；
+> WARNING 首次真实接入前补最小调度规则；TTS/Web 等第二真实渠道接入前再安排有限架构子步，
+> 根据真实交付语义提取 DeliveryPlan/Renderer 协议，不提前建设通用多渠道框架。每个大阶段结束
+> 做轻量收口，并以直接 print 泄漏、FIFO、in-flight flush、Renderer 无 I/O 等测试守住边界。
+
 软问题（显示/话术/误识别，与 PRESENT 并行、不阻塞）：`SYNC-UI-CLAIMS-01` 改文案、`GAPS-FIX-ANSWER-HINT-01` 编号提示、UX 系列、`ASR-CMD-02-POSTPROCESS-01`（等组长定演示领域后重启采集接入）。
 
 > 原待办：①`INTENT-02-CLEANUP-NAMING-01` 去影子命名（纯机械改名）；②`ASR-ROBUSTNESS-RULE-GAPS-01/02` 各项缺口定案——已并入上面第 3/6 项。
@@ -129,3 +188,116 @@ git diff --check
 - 当前目标分支：`codex/asr-demo-unified-understanding`。
 - 未经用户明确要求，不提交、不推送、不创建 PR。
 - 当前工作区已有累计修改，只处理本轮范围，不清理用户其他改动。
+
+## 8. 2026-08-16 PRESENT END_ONLY 停靠点
+
+- `PRESENT-ADMISSION-01` 四刀已 `AUTO_OK`：结束阶段改为唯一结构化
+  `SESSION_CLOSING_SUMMARY` Intent，一次性显示实验步骤数和待确认明细。
+- `PRESENT-CLOSING-NAME-01` 已 `AUTO_OK`：旧 `SESSION_SUMMARY` 已无兼容别名地迁移为
+  `SESSION_CLOSING_SUMMARY`；未引入正式 LLM SessionSummary、SessionRecord 或导出。
+- 零待确认时明确显示“没有待确认问题”；有待确认时在同一摘要块列出编号、
+  状态和问题，不再另发最终 `CLARIFICATION_REVIEW`。
+- 删除旧“提交 M 段实验口述”内部术语；不引入正式 `SessionSummary`、额外 LLM
+  或导出逻辑。
+- 专项 41/41、全量 571/571 通过；未做真实麦克风 UX 验收，状态不升为
+  `REAL_OK`/`UX_CONFIRMED`。
+- **当前唯一下一项**：`PRESENT-FEEDBACK-REGRESSION-01`，补回 user 可见的启动、
+  唤醒成功和用户主动退出反馈，全部走统一 PRESENT 链路。
+
+## 9. 2026-08-16 PRESENT 程序级反馈停靠点
+
+- `PRESENT-FEEDBACK-REGRESSION-01` 已 `AUTO_OK`：新增结构化 `PROGRAM_STATUS`
+  （starting/ready/exited），`WAKE_ACK` 改为携带 `keyword` 的结构化合同。
+- pump 生命周期从单会话上移到整个程序；启动、就绪、唤醒、会话内消息和退出
+  共用一个 Coordinator/Pump，没有第二个生产 stdout 出口。
+- Ctrl+C 在模型加载期间或待机/会话期间都能投递“已退出”反馈。
+- 程序状态与唤醒结果均有独立 projection→Intent 合同；专项 56/56、全量 578/578 通过。
+  未做真实麦克风 UX 验收，仍不标
+  `REAL_OK`/`UX_CONFIRMED`。
+- **当前唯一下一项**：`PRESENT-PUMP-FLUSH-01`，用真正的 pending + in-flight
+  完成确认取代 `pending_count == 0` 猜测，确保慢 sink 不丢尾消息。
+
+## 10. 2026-08-16 PRESENT pump flush 停靠点
+
+- `PRESENT-PUMP-FLUSH-01` 已 `AUTO_OK`：Coordinator 以原子 unfinished 计数统一覆盖
+  pending、deferred 与已取走但仍在 renderer/output 中的 in-flight 消息。
+- `PresentationPump.flush(timeout)` 只有在所有已提交消息真正完成输出后返回 `True`；
+  超时返回 `False`，renderer/output 失败则抛出含 intent id、错误类型和原因的
+  `PresentationDeliveryError`。
+- 单条消息失败不会杀死 pump；失败被记录后，后续消息继续交付。语义去重丢弃项会正确
+  扣减 unfinished，deferred 项继续保留未完成所有权。
+- 会话收尾和程序退出已移除 `pending_count == 0` 轮询，统一先 flush、显式记录失败或超时，
+  再停止自己拥有的 pump。
+- 专项 24/24、全量 584/584 通过；未使用真实麦克风，不标 `REAL_OK`/`UX_CONFIRMED`。
+- **当前唯一下一项**：`PRESENT-LEGACY-MESSAGE-CLEANUP-01`，删除旧
+  `PresentationMessage`、专属 channel/status/speech policy 与旧合同测试，不保留双轨兼容。
+
+## 11. 2026-08-16 PRESENT 旧消息双轨清理停靠点
+
+- `PRESENT-LEGACY-MESSAGE-CLEANUP-01` 已 `AUTO_OK`。
+- `MessageKind`、`MessagePriority`、`ScreenTarget` 三个现役语义枚举已归位到
+  `src/core/presentation_intent.py`；所有生产与测试 import 均从 Intent 模块取得。
+- 删除 `src/core/presentation_message.py`、`tests/test_presentation_message.py`，以及只属于旧模型的
+  `PresentationMessage`、`DeliveryChannel`、`MessageStatus`、`SpeechPolicy`、
+  `VoiceDeliveryPolicy`；无兼容文件、别名或导出。
+- `src/tests` 对上述旧符号及模块的引用为 0。专项 86/86 通过；全量从 584 变为 574，
+  恰好减少被删除的 10 项旧合同测试，其余 574/574 全绿。
+- 本轮只改变代码归属和删除废弃模型，没有改变用户文案或交互，不新增真实 UX 状态。
+- **当前唯一下一项**：`PRESENT-FIX-LEAK-01`，清理 user 屏幕上的 recorder/VAD/wakeword
+  与第三方模型开发输出，并做真实 user 模式无泄漏确认。
+
+## 12. 2026-08-16 PRESENT 开发输出泄漏停靠点
+
+- `PRESENT-FIX-LEAK-01` 已 `AUTO_OK`：主程序涉及的 recorder、VAD、wakeword、ASR、
+  state、LLM 和 main 模块均无直接 `print()`；项目内部状态统一进入 logging。
+- SenseVoice/FunASR 在 `AutoModel` 初始化与每次 `generate` 时都显式设置
+  `disable_pbar=True`、`disable_log=True`，不采用进程级 stdout/stderr 重定向，避免并发时吞掉
+  Pump 的合法用户输出。
+- 新增 AST 架构护栏，只检查生产运行模块；独立 VAD/唤醒诊断脚本和结果查看工具仍可主动打印。
+- 专项 16/16、全量 575/575 通过。未启动真实模型与麦克风，真实 user 屏幕零泄漏复核
+  并入 `PRESENT-FINAL-UX-VERIFY-01`，本轮不标 `REAL_OK`/`UX_CONFIRMED`。
+- **当前唯一下一项**：`PRESENT-NOACTION-FEEDBACK-01`，让问题编号不存在、无目标回答、
+  无法暂缓/弃权等 no_action 场景不再沉默。
+
+### 12.1 真实会话 20260816_141745 修正
+
+- 功能链通过：两步记录、追问、review、指定回答、自然结束确认、END_ONLY 摘要与退出反馈均正确。
+- 启动泄漏未通过：出现 FunASR 版本检查、ModelScope 两组仓库检查/下载日志与 tqdm；说明
+  `disable_pbar/disable_log` 只覆盖 FunASR 推理层，没有覆盖更新检查和下载层。
+- 已补 `disable_update=True`、初始化前 `TQDM_DISABLE=1`、ModelScope 下载 logger 降噪；
+  READY 文案补“按 Ctrl+C 可以退出程序”。专项49/49、全量576/576通过。
+- 需要一次最短二次启动复验：只观察 starting→ready，确认零第三方行且 READY 含 Ctrl+C 后即可退出；
+  通过后 `PRESENT-FIX-LEAK-01` 升 `REAL_OK`。
+
+### 12.2 真实会话 20260816_142352 再修正
+
+- 下载日志、两个进度条和更新联网提示已经消失，证明 `disable_update`、`TQDM_DISABLE` 与 logger
+  降噪有效；仅残留 `funasr version: 1.4.1.`。
+- 精确定位到 FunASR 1.4.1 `utils/version_checker.py`：它先 print 版本，再检查 `disable`。
+  创建 AutoModel 前只将该 `check_for_update` 入口替换为空操作，不做进程输出重定向。
+- 用户确认会话结束后应可再次唤醒；新增 `ProgramStatus.WAITING`，正常会话返回后显示
+  “已返回待机，可再次说小科小科开始新会话；按 Ctrl+C 退出”。
+- 专项63/63、全量576/576通过。下一次真实复验需覆盖零版本横幅、WAITING 和第二次唤醒。
+
+### 12.3 真实会话 20260816_142945 最终结论
+
+- `PRESENT-FIX-LEAK-01` 升为 `REAL_OK`。
+- starting→ready 之间无 FunASR 版本、更新、ModelScope 下载日志或进度条；整轮无模型路径、
+  RTF、音频时长/保存路径、识别耗时或 token 泄漏。
+- READY 正确提示 Ctrl+C；会话结束摘要后 WAITING 明确提示可再次唤醒；Ctrl+C 后 EXITED
+  完整交付，三者顺序和含义正确。
+- 本轮 WAITING 后直接 Ctrl+C，未实际发起第二次唤醒；自动集成已覆盖循环返回，真实双会话
+  复验留到 `PRESENT-FINAL-UX-VERIFY-01`，不阻塞泄漏任务。
+- 当前唯一下一项保持 `PRESENT-NOACTION-FEEDBACK-01`。
+
+### 12.4 双会话复验 20260816_143151 → 20260816_143201
+
+- 同一进程第一轮零步骤结束，WAITING 后再次唤醒成功，第二轮生成新 session_id；最后再次
+  WAITING，再由 Ctrl+C 交付 EXITED。再次唤醒与程序级 Coordinator/Pump 生命周期真实通过。
+- 两轮均无 FunASR/ModelScope、路径、进度条、RTF、耗时或 token 泄漏，巩固 FIX-LEAK REAL_OK。
+- 复现下一项证据：“制业枪”后只有 ASR，无业务处理反馈，归入
+  `PRESENT-NOACTION-FEEDBACK-01`。
+- 根因确认并将原登记更正为 `CLARIFICATION-COMPOUND-CONFIRM-ANSWER-01`：ASR完整保留
+  “是的，是一夜枪，体积为50毫升”，该段没有LLM调用；确定性命令因句首“是的”走
+  AFFIRM→CONFIRM，只清确认标志、不提取体积，确认记录仍缺 amount_value/amount_unit。
+  这是程序复合意图执行缺陷，文案误导只是后果。

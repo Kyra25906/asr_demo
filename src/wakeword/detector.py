@@ -1,9 +1,13 @@
+import logging
 import wave
 from pathlib import Path
 
 import numpy as np
 import sherpa_onnx
 import sounddevice as sd
+
+
+logger = logging.getLogger(__name__)
 
 class WakeWordDetector:
     def __init__(
@@ -18,7 +22,7 @@ class WakeWordDetector:
 
         self._validate_files()
 
-        print("正在加载唤醒词模型……")
+        logger.info("正在加载唤醒词模型……")
 
         self.keyword_spotter = (
             sherpa_onnx.KeywordSpotter(
@@ -55,7 +59,7 @@ class WakeWordDetector:
             )
         )
 
-        print("唤醒词模型加载完成。")
+        logger.info("唤醒词模型加载完成。")
 
     def _validate_files(self):
         required_files = [
@@ -205,7 +209,7 @@ class WakeWordDetector:
             .create_stream()
         )
 
-        print(
+        logger.info(
             "正在等待唤醒词“小科小科”……"
         )
 
@@ -222,7 +226,7 @@ class WakeWordDetector:
                 )
 
                 if overflowed:
-                    print(
+                    logger.warning(
                         "警告：麦克风输入发生溢出。"
                     )
 

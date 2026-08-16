@@ -8,6 +8,7 @@
 
 import threading
 import unittest
+from unittest.mock import patch
 
 from src.asr.schemas import ASRResult
 from src.core.state_manager import StateManager
@@ -151,28 +152,45 @@ class NonBlockingIntegrationTest(unittest.TestCase):
             session_done.set()
 
         # Act：在后台线程运行会话
-        thread = threading.Thread(target=run)
-        thread.start()
+        with patch("builtins.print") as output:
+            thread = threading.Thread(target=run)
+            thread.start()
 
-        # Assert 1：三段都录完（此时第 1 段 LLM 仍在阻塞）
-        self.assertTrue(
-            recorder.recorded_all.wait(timeout=5),
-            "三段口述未在预期时间内录完",
-        )
-        # Assert 2：录音期间 LLM 确实还在阻塞 → 非阻塞成立
-        self.assertTrue(
-            recorder.blocked_during_record,
-            "录音等待了 LLM（阻塞回归）",
-        )
+            # Assert 1：三段都录完（此时第 1 段 LLM 仍在阻塞）
+            self.assertTrue(
+                recorder.recorded_all.wait(timeout=5),
+                "三段口述未在预期时间内录完",
+            )
+            # Assert 2：录音期间 LLM 确实还在阻塞 → 非阻塞成立
+            self.assertTrue(
+                recorder.blocked_during_record,
+                "录音等待了 LLM（阻塞回归）",
+            )
 
-        # 放行第 1 段的 LLM，让后台排空、会话正常结束
-        observer.release.set()
-        thread.join(timeout=5)
+            # 放行第 1 段的 LLM，让后台排空、会话正常结束
+            observer.release.set()
+            thread.join(timeout=5)
+
+            rendered = "\n".join(
+                call.args[0] for call in output.call_args_list
+            )
 
         # Assert 3：会话结束；两段非结束口述都提交并落盘 ASR
         self.assertTrue(session_done.is_set(), "会话未正常结束")
         self.assertEqual(recorder.record_calls, 3)
         self.assertEqual(len(asr_store.appended), 2)
+
+        # Assert 4：会话级引导只出现一次，循环不再重复宣布继续监听。
+        self.assertEqual(rendered.count("实验记录会话已开始"), 1)
+        self.assertEqual(rendered.count("请开始口述实验过程"), 1)
+        self.assertNotIn("系统将立即继续监听", rendered)
+
+        # 去重复不能吞掉逐段业务结果和结束反馈。
+        self.assertIn("本段结构化处理失败，原始记录已保存", rendered)
+        self.assertEqual(rendered.count("实验记录会话已结束"), 1)
+        self.assertIn("本次共记录 0 个实验步骤", rendered)
+        self.assertEqual(rendered.count("没有待确认问题"), 1)
+        self.assertNotIn("提交 0 段实验口述", rendered)
 
 
 if __name__ == "__main__":

@@ -9,13 +9,14 @@ from __future__ import annotations
 
 from src.core.presentation_copy import (
     ConfirmationAckResult,
+    ProgramStatus,
     RecordAckResult,
     ReviewItem,
 )
-from src.core.presentation_intent import PresentationIntent
-from src.core.presentation_message import (
+from src.core.presentation_intent import (
     MessageKind,
     MessagePriority,
+    PresentationIntent,
     ScreenTarget,
 )
 from src.core.unified_observer import (
@@ -25,6 +26,42 @@ from src.core.unified_observer import (
 from src.core.unified_segment_processor import PendingClarificationSummary
 
 _END_CONFIRMATION_QUESTION = '是否结束本次实验记录？（请说"是的"或"不是"）'
+
+
+def messages_for_program_status(
+    status: ProgramStatus,
+    *,
+    request_id: str,
+) -> tuple[PresentationIntent, ...]:
+    """把程序生命周期状态投影为一条用户反馈。"""
+
+    return (
+        PresentationIntent(
+            intent_id=f"{request_id}-program-status",
+            kind=MessageKind.PROGRAM_STATUS,
+            args={"status": status},
+            priority=MessagePriority.DIRECT_ACK,
+            screen_target=ScreenTarget.STATUS,
+        ),
+    )
+
+
+def messages_for_wake_ack(
+    keyword: str,
+    *,
+    request_id: str,
+) -> tuple[PresentationIntent, ...]:
+    """把唤醒检测结果投影为一条用户反馈。"""
+
+    return (
+        PresentationIntent(
+            intent_id=f"{request_id}-wake",
+            kind=MessageKind.WAKE_ACK,
+            args={"keyword": keyword},
+            priority=MessagePriority.DIRECT_ACK,
+            screen_target=ScreenTarget.STATUS,
+        ),
+    )
 
 
 def messages_for_observation(

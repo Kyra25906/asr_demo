@@ -3,14 +3,50 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum, IntEnum
 from types import MappingProxyType
 from typing import Mapping
 
-from src.core.presentation_message import (
-    MessageKind,
-    MessagePriority,
-    ScreenTarget,
-)
+
+class MessageKind(str, Enum):
+    """消息表达的业务含义，而不是界面颜色或控件类型。"""
+
+    WAKE_ACK = "wake_ack"
+    PROGRAM_STATUS = "program_status"
+    TRANSCRIPT = "transcript"
+    RECORD_ACK = "record_ack"
+    CONFIRMATION_ACK = "confirmation_ack"
+    CLARIFICATION = "clarification"
+    CLARIFICATION_DEFERRED = "clarification_deferred"
+    CLARIFICATION_REVIEW = "clarification_review"
+    SAFETY_ALERT = "safety_alert"
+    SYSTEM_ISSUE = "system_issue"
+    STAGE_SUMMARY = "stage_summary"
+    SESSION_CLOSING_SUMMARY = "session_closing_summary"
+    DEBUG = "debug"
+
+
+class MessagePriority(IntEnum):
+    """数值越小，越应该优先交给用户。"""
+
+    CRITICAL = 0
+    DIRECT_ACK = 10
+    ACTIVE_QUESTION = 20
+    REVIEW = 30
+    SUMMARY = 40
+    ROUTINE = 50
+    DEBUG = 100
+
+
+class ScreenTarget(str, Enum):
+    """前端的语义区域；具体颜色和布局仍由前端决定。"""
+
+    DIALOGUE = "dialogue"
+    CURRENT_QUESTION = "current_question"
+    RECORD_TIMELINE = "record_timeline"
+    STATUS = "status"
+    ALERT = "alert"
+    SUMMARY = "summary"
 
 
 @dataclass(frozen=True)

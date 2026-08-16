@@ -97,13 +97,23 @@ Web 要结构化列表（可点击/时间线/状态区域）时，由子步 C �
 |---|---|---|---|
 | `PresentationIntent` | `src/core/presentation_intent.py` | 不可变语义意图：kind、args（语义参数）、priority、屏幕区域、来源引用 | 不含可变 `status`、不含最终中文 |
 | 文案目录 | `src/core/presentation_copy.py` | 语义 + 参数 → 用户文案（user/admin 两种措辞） | 不做布局/前缀/换行 |
-| `PresentationCoordinator` | `src/core/presentation_coordinator.py` | FIFO 主干 + 单问题选择 + 相邻"已保存"合并 | 不做 supersede/持久化历史/通用规则引擎 |
-| presentation pump | `src/core/presentation_pump.py` | 唯一 stdout 写入者；从 Coordinator 取货交 Renderer | 不决定内容/顺序 |
+| `PresentationCoordinator` | `src/core/presentation_coordinator.py` | FIFO 主干 + 单问题选择 + 相邻"已保存"合并；原子跟踪 pending/deferred/in-flight 完成所有权 | 不做 supersede/持久化历史/通用规则引擎 |
+| presentation pump | `src/core/presentation_pump.py` | 唯一 stdout 写入者；从 Coordinator 取货交 Renderer；提供有超时和失败语义的 flush | 不决定内容/顺序 |
 | `TerminalRenderer` | `src/core/terminal_renderer.py` | 前缀/布局/换行/UI_MODE 过滤 | 不产文案、不决定内容 |
 | DEBUG logging | 标准库 `logging` | 基础设施与开发详情写文件/日志 | 不经 pump、不进 Intent |
 
 `main.py` 职责不变（组合根 + 会话循环），只是把散落的 `print()` 换成"投递 Intent"；
 基础设施层（LLM client / ASR backend / state_manager）把 `print()` 换成 `logging`。
+
+### 3.1 完成交付合同
+
+- `pending_count == 0` 只表示队列中暂时无货，不能证明已取走的消息完成 renderer/output；
+- Coordinator 在 `submit` 时取得每条消息的完成所有权，Pump 在 output 返回后的 `finally`
+  中调用 `mark_completed()`；语义去重丢弃项当场完成，deferred 项保持 unfinished；
+- `join(timeout)`/`flush(timeout)` 等待 unfinished 归零，超时显式返回 `False`；
+- renderer/output 异常被记录为结构化 `PresentationDeliveryFailure`，Pump 继续处理后续消息，
+  flush 最终用 `PresentationDeliveryError` 报告本轮失败；
+- 停机顺序固定为 flush → 报告超时/失败 → stop，不能再轮询 pending 队列猜测完成。
 
 ## 4. 四条边界（团队钉死，照单全收）
 
@@ -122,10 +132,10 @@ Web 要结构化列表（可点击/时间线/状态区域）时，由子步 C �
   不做全局优先级重排。
 - **"已保存"合并要求两条相邻**：只有相邻的同类"已记录"才合并，避免跳过中间消息乱并。
 
-## 6. `PresentationMessage` 的演进（现状 → Intent）
+## 6. `PresentationMessage` 的演进（已完成）
 
-现状：`src/core/presentation_message.py` 已定义完整合同，但**只有其自身测试在用，
-生产代码无引用**（`main.py` 与各业务模块均不 import）。故演进无生产破坏风险。
+2026-08-16 已完成迁移：旧 `src/core/presentation_message.py` 及其专属测试已删除，
+生产代码与测试只保留 `PresentationIntent` 主链，无兼容模块或类型别名。
 
 | 旧字段（`PresentationMessage`） | 去向 |
 |---|---|
@@ -137,16 +147,12 @@ Web 要结构化列表（可点击/时间线/状态区域）时，由子步 C �
 | `message_id` | 保留语义，改称 `intent_id`（不可变标识） |
 
 `PresentationMessage` 数据类、`MessageStatus`、`DeliveryChannel`、`SpeechPolicy`、
-`VoiceDeliveryPolicy` 等 Message 专属概念，**迁移删除时机见下**，不进入长期生产代码；
-共享枚举 `MessageKind` / `MessagePriority` / `ScreenTarget` 被 `PresentationIntent` 复用、保留。
+`VoiceDeliveryPolicy` 等 Message 专属概念已全部删除；共享枚举 `MessageKind` /
+`MessagePriority` / `ScreenTarget` 已归位到 `presentation_intent.py`。
 
-> **旧 `PresentationMessage` 迁移删除时机（用户 2026-08-16 要求）**：文案目录和
-> `TerminalRenderer` 合同稳定后、`PresentationCoordinator` 接线前或接线首步，完成旧
-> `PresentationMessage` 的迁移与删除——**不让 `Message` 与 `Intent` 两个概念长期并存于
-> 生产代码**。届时：删除 `PresentationMessage` 数据类与 `tests/test_presentation_message.py`
-> 旧合同测试；`MessageStatus`/`DeliveryChannel`/`SpeechPolicy`/`VoiceDeliveryPolicy` 中
-> 不在 `Intent` 链路使用的部分一并删除，等子步 C 真正需要时再以新形式引入
-> （子步 C 的 `DeliveryPlan`/`PresentationTurn`）。
+> **迁移结论**：旧模型曾用于探索屏幕、TTS 与生命周期边界；稳定接缝确定后不再保留脚手架。
+> 第二真实渠道出现前不预建新的通用交付对象；届时依据真实需求再考虑
+> `DeliveryPlan`/`PresentationTurn`，不得复活旧双轨。
 
 ## 7. 映射关系（投影规则：业务事实 → 语义意图 → 文案）
 
@@ -261,3 +267,32 @@ Intent args = {"remaining_fields": ("duration",)}
 - 不迁移 `RECORD` 层（存储层已独立，不在消息链路内）；
 - 不动 `GAPS-FIX-ANSWER-HINT-01` 的编号提示（属 GAPS 软问题，与 PRESENT 并行，另行收口）；
 - 不建 `SessionViewState` / `DeliveryPlan` / `PresentationTurn` / supersede / 事件词汇表（子步 C）。
+
+## 13. 用户呈现准入与时机合同（2026-08-16 用户确认）
+
+PRESENT 不是把旧 `print()` 原样搬进统一出口。任何信息进入用户屏幕前，必须先判断
+“用户此刻是否需要知道”；技术过程默认进入日志。首版使用以下六类时机：
+
+| 时机 | 用户可见内容 | 约束 |
+|---|---|---|
+| `ONCE_PER_SESSION` | 会话开始说明、会话编号、连续口述说明、首次“请开始口述” | 每个会话只显示一次，不得在录音循环中重复 |
+| `ON_EVENT` | ASR 转写、记录/降级/失败回执、新追问、回答/确认/暂缓回执 | 真实业务事件发生才显示 |
+| `ON_STATE_CHANGE` | 首次超时、临近自动结束、降级、恢复、警告 | 状态未变化不得重复；倒计时只在关键节点提示 |
+| `ON_REQUEST` | 用户主动查看待确认问题及“当前没有待确认问题” | 不主动反复播报 |
+| `END_ONLY` | 实验步骤数、待确认数合并后的结束摘要 | 会话结束只显示一个摘要块 |
+| `LOG_ONLY` | 模型加载、麦克风/VAD 内部阶段、文件路径、音频时长、目标/权限/token/上下文事件数 | user 模式不得上屏；admin/日志保留 |
+
+明确删除的循环噪声：每段重复的“请开始口述”、每段“系统将立即继续监听”、
+“麦克风准备就绪/检测到人声/说话结束/录音已保存路径”。系统静默继续监听是默认行为，
+无需逐轮宣布。
+
+首版无口述阶段固定为：首次进入等待时提示一次、剩余约 60 秒提示一次、剩余约 30 秒
+提示一次、达到会话总超时后结束。同一阶段连续收到录音超时不再提示；检测到新口述后
+回到活跃态，下一次重新进入等待时可以再次提示。
+
+推荐节奏：唤醒反馈 → 一次性会话说明与首次录音提示 → 用户口述 → 转写与必要回执/追问
+→ 静默继续监听 → 仅状态变化时提示 → 一次性结束摘要。
+
+该分类是后续 QUERY、DENY、WARNING 与 TTS 的共用时机接缝；新增消息必须先归类，
+不得仅因内部产生了事件就直接呈现。TTS 以后在 `DeliveryPlan` 决定是否播报，不能把
+“屏幕可见”等同于“必须朗读”。

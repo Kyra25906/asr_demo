@@ -1,6 +1,6 @@
 # asr_demo 项目任务清单
 
-最后更新：2026-08-14（体验基线走查完成，UX_ISSUES，8 项 UX 问题登记）
+最后更新：2026-08-16（PRESENT 程序级必要反馈 AUTO_OK）
 
 > 本文件是当前任务、优先级和验收状态的唯一来源。架构说明、环境命令和下一会话摘要
 > 分别见 `PROJECT_ARCHITECTURE.md`、`ENVIRONMENT_SETUP.md` 和
@@ -71,10 +71,11 @@ TODO → DESIGN → CODED → AUTO_OK → REAL_OK
 
 ## 2. 当前测试基线
 
-- 当前全量自动测试：`562 tests OK`（Python 3.11.9，2026-08-16，含 GAPS 修复 + PRESENT 子步 A 全部 + B-1/B-2/B-3）
+- 当前全量自动测试：`576 tests OK`（Python 3.11.9，2026-08-16；真实启动发现 FunASR 更新检查/ModelScope 下载输出后，补静默配置与 Ctrl+C 指引合同）
 - 环境验证：核心依赖和 `src.main` 导入成功；首次沙箱内失败已确认是执行权限误判，不是 `.venv` 损坏
-- 最近真实连续口述会话：`20260814_113958`
-- 最近真实会话已验证：显示一致性——第 2 段"时间为10分钟"被兜底接住且显示自洽（"目标=clarification_context，待确认动作=answer；已执行：已将对问题 1 的答复的实体字段 ['duration'] 填入。仍需补充：temperature。"，不再是 no_action 矛盾）；追问自动显示、计数"提交 1 段"、上下文 1、剩余问题列出
+- 最近 PRESENT 真实验收会话：`20260815_212615`（补充复验 `20260815_213926`）
+- 最近 PRESENT 双会话复验：`20260816_143151` → `20260816_143201`（同进程再次唤醒成功，零第三方泄漏）
+- 最近真实会话已验证：编号分离、结束汇总用户语言、回执及时（九维表维 4/5/9 通过）；同时登记了输出泄漏、`no_action` 沉默、缺字段复核和 ASR 误识别问题。
 
 恢复工作时先运行：
 
@@ -88,46 +89,55 @@ cd C:\Users\dahli\Desktop\asr_demo
 
 ## 3. 当前唯一下一项
 
-> 清理五连前四刀已闭环：`MAIN-SESSION-CONTEXT-01`/`MAIN-RUNTIME-HARDEN-01`/`INTENT-02-CLEANUP-FLAGS-01`/`INTENT-02-CLEANUP-SUBMIT-01`/`INTENT-02-CLEANUP-COMMAND-01` 全部 REAL_OK；A+B（34/35/36）与显示一致性 REAL_OK；`INTENT-02-CLEANUP-NAMING-01` AUTO_OK（待一次轻量真实复验）。**当前待办**：NAMING 轻量复验 → GAPS 修复（3.1A 行 7-10）→ `INTENT-02-CLEANUP-VERIFY-01` 总验收。
+**`PRESENT-NOACTION-FEEDBACK-01`：补齐 no_action 容错反馈。**
 
-当前 P0 顺序：
+本项固定范围：
 
-```text
-MAIN-SESSION-CONTEXT-01 REAL_OK
-→ MAIN-RUNTIME-HARDEN-01 REAL_OK
-→ INTENT-02-CLEANUP-FLAGS-01 REAL_OK
-→ INTENT-02-CLEANUP-SUBMIT-01 REAL_OK
-→ INTENT-02-CLEANUP-COMMAND-01 REAL_OK
-→ INTENT-02-CLEANUP-NAMING-01 AUTO_OK（待轻量复验）
-→ GAPS 修复（GAPS-FIX-END/DEFER/ANSWER-HINT/REVERIFY）
-→ INTENT-02-CLEANUP-VERIFY-01
-```
+1. 投影层对 no_action 形成结构化、可理解的用户反馈；
+2. 覆盖问题编号不存在、无目标回答、无法暂缓/弃权等已知沉默场景；
+3. 不在 main 手写业务分支，不把内部 reason 原样泄漏给用户；
+4. 保持普通实验与合法控制路径文案不重复。
 
-### 为什么要先清债再盖楼
+`END_ONLY` 第四刀已完成自动闭环：结束时只交付一个结构化摘要，合并实验步骤数与待确认明细；
+零待确认也明确说明，旧“提交 M 段实验口述”内部术语已删除。专项 41/41、全量 571/571 通过。
+同轮已将即时收尾回执从 `SESSION_SUMMARY` 改为 `SESSION_CLOSING_SUMMARY`，无兼容双名，
+不影响离线核验脚本的 `session_summary()` 统计函数，也未引入 LLM 正式总结。
+真实验收仍统一并入 `PRESENT-FINAL-UX-VERIFY-01`。
 
-当前 `main.py` 里新旧两套代码用 `UNIFIED_SHADOW_ENABLED` 和 `UNIFIED_SHADOW_EXECUTE_ENABLED` 两个 flag 切换。
-带着这些 flag 和旧代码直接做查询/安全/RAG 扩展会导致：(1) 新功能也要写两套分支；(2) `UnifiedInputKind` 加 QUERY 需要所有测试数据同步更新——带着 flag 做更容易遗漏。
-先清干净再盖楼，每次改主流程就跑真实验收确认不退化。
+`PRESENT-FEEDBACK-REGRESSION-01` 已自动闭环：程序级 pump 在初始化前启动，启动中、就绪、
+唤醒成功和 Ctrl+C 退出都经同一 Coordinator/Pump 交付；会话复用该链路，
+不再每次唤醒新建第二条生产输出链。启动期间按 Ctrl+C 也能显示退出回执。
+专项 56/56、全量 578/578 通过。
 
-### 清理后的下一批：查询/安全/RAG 类型准备（P1）
+`PRESENT-PUMP-FLUSH-01` 已自动闭环：Coordinator 原子跟踪 pending、deferred 与 in-flight
+消息，Pump 在 renderer/output 真正返回后才确认完成；`flush(timeout)` 超时返回 `False`，
+交付失败抛出带 intent/error/reason 的结构化异常，同时失败消息不会阻断后续消息。
+慢 output、失败隔离、去重与 deferred 计数均有合同测试；专项 24/24、全量 584/584 通过。
 
-```text
-QUERY-TYPES-01 + SAFETY-TYPES-01 + KNOWLEDGE-PROTOCOLS-01 （并行，纯类型文件）
-→ UNIFIED-QUERY-01 （统一理解加 QUERY 分支）
-→ DISPATCH-QUERY-01 （分派加 KNOWLEDGE_BASE 目标）
-→ BYPASS-QUERY-01 + CONFIG-QUERY-SAFETY-01 + RAG-CONTEXT-CONTRACT-01
-→ 三项测试 + 现有测试数据更新
-→ 全量 ~444 项通过
-```
+`PRESENT-LEGACY-MESSAGE-CLEANUP-01` 已自动闭环：`MessageKind`、`MessagePriority`、
+`ScreenTarget` 三个现役语义枚举归位到 `presentation_intent.py`；旧 `PresentationMessage`
+及其 `DeliveryChannel`、`MessageStatus`、`SpeechPolicy`、`VoiceDeliveryPolicy`、专属 10 项测试
+全部删除，无兼容别名。`src/tests` 旧引用为 0；专项 86/86、删除后全量 574/574 通过。
 
-这批只定义类型合同和扩展点，不改 main 行为（feature flag 默认 false）。
-完整实施（SAFETY-INTEGRATE-01、RAG-CONTEXT-01、QUERY-ANSWER-01）在 PRESENT 阶段稳定后再展开。
+`PRESENT-FIX-LEAK-01` 已完成第二轮自动修复：recorder/VAD/wakeword/state/LLM/ASR/main 生产模块
+均无直接 `print()`；内部状态走 logging，FunASR 初始化和 generate 显式设置
+`disable_update=True`、`disable_pbar=True`、`disable_log=True`，并以 `TQDM_DISABLE=1` 关闭
+ModelScope 下载条。真实会话 `20260816_141745` 首轮仍发现版本检查/下载输出，现已针对性修复；
+二次会话 `20260816_142352` 证实下载日志/进度条已消失，但 FunASR 1.4.1 在 disable 判断前仍
+无条件打印版本号；现已只替换其 `check_for_update` 入口。同时 READY 补 Ctrl+C 指引，新增
+WAITING 状态提示再次唤醒。专项 63/63、全量 576/576 通过，待最短三次启动/双会话复验。
+
+PRESENT 之外的 Query/Safety/RAG 真实接入、ASR 路演稳定性和 LLM 格式容错仍保留在任务库，
+但不改变本节的当前执行顺序。
 
 ## 3.1 当前执行看板
 
 > 本看板只放近期事项；完整任务库与历史证据见第 4 节和维护日志。
 
-### 3.1A 待办看板（未闭环）
+### 3.1A 近期任务登记（兼含关联完成项）
+
+> 本表保留跨模块任务与历史关联，行号不代表当前执行顺序。
+> PRESENT 期间的范围、顺序与状态以下方“15 项收口清单”为准。
 
 | 顺序 | 优先级 | 任务 | 当前状态 | 本轮要得到的结果 | 进入下一项的条件 |
 |---:|---|---|---|---|---|
@@ -149,11 +159,57 @@ QUERY-TYPES-01 + SAFETY-TYPES-01 + KNOWLEDGE-PROTOCOLS-01 （并行，纯类型�
 | 16 | `P1` | `RESTORE-DEGRADED-HINT-01` 恢复降级人话提示（评委 2026-08-14 发现） | **REAL_OK** | `display_observation` 在 `acceptance_kind=="degraded_evidence_note"` 时打印"原始记录已保存，结构化处理暂时不可用"（话术取自 `OUTPUT_PRESENTATION_POLICY.md` 第224行） | 冒烟测试确认输出含人话 |
 | 17 | `P1` | `SYNC-UI-CLAIMS-01` 用户文案与实际行为一致性核查（评委 2026-08-14 发现） | **硬谎话 2 处已拆（随 RESTORE-NONBLOCK-01）** | ①main.py:320"无需等待"→非阻塞后为真；②main.py:111"旧流程继续"→"ASR 原文已保存"。**误导 2 处**仍待 PRESENT 文案统一改：③"立即继续监听"（非阻塞后为真）；④"提交 M 段实验口述"（内部术语）。DEBUG 泄漏仍登记 UX-01/UX-11 | 误导 2 处随 PRESENT 文案统一改 |
 | 18 | `P1` | `ANSWER-FALLBACK-ADJACENCY-01` 无编号兜底加"紧邻"约束（用户 2026-08-14 晚指出） | **AUTO_OK** | `decide_unnumbered_answer` 加第 5 条规则：问题来源段+1==当前段才允许自动接；新增 `current_segment_id` 参数 + 测试（隔段不承认） | 单测覆盖边界路径，无需专门真实复验 |
-| 19 | `P1` | `PRESENT-FIX-LEAK-01` 开发输出泄漏收尾（B-4 真实验收发现） | `TODO` | `vad_recorder.py`(119/148/205)、`recorder.py`(82)、`wakeword/detector.py`(21/209) print → logging；禁 FunASR 进度条（`disable_pbar`/重定向） | 屏幕无路径/rtf/音频时长/加载提示，维1/7 ✗→✓ |
-| 20 | `P1` | `PRESENT-NOACTION-FEEDBACK-01` 投影层 no_action 容错反馈（B-4 真实验收发现） | `TODO` | 投影层对 no_action（问题编号不存在/弃权/无目标回答）产出容错提示，不再沉默 | 用户说话后系统必有回应，维6 ✗→✓ |
+| 19 | `P1` | `PRESENT-FIX-LEAK-01` 开发输出泄漏收尾（B-4 真实验收发现） | `REAL_OK` | 141745发现完整第三方噪声；142352清到仅剩版本行；定位并精确禁用FunASR 1.4.1版本检查入口。会话142945确认启动/整轮零FunASR/ModelScope/路径/进度/RTF/耗时/token泄漏，READY含Ctrl+C、WAITING含再次唤醒指引 | 专项63/63、全量576/576通过；第二次实际唤醒留到最终双会话UX验收，不阻塞泄漏任务 |
+| 20 | `P1` | `PRESENT-NOACTION-FEEDBACK-01` 投影层 no_action 容错反馈（B-4 真实验收发现） | `TODO` | 投影层对 no_action（问题编号不存在/弃权/无目标回答）产出容错提示，不再沉默；双会话143201再次复现：“制业枪”后只有ASR，无处理结果 | 用户说话后系统必有回应，维6 ✗→✓ |
+| 33 | `P0` | `CLARIFICATION-COMPOUND-CONFIRM-ANSWER-01` 同句确认+实体回答不能丢字段 | `TODO` | 会话143201根因已查明：ASR完整保留“是的，是一夜枪，体积为50毫升”，该段无LLM调用；确定性解析因句首“是的”直接路由AFFIRM→CONFIRM，`confirm_clarification`只清确认标志，不走实体提取，确认记录留下`remaining_fields=[amount_value,amount_unit]`。这是程序复合意图处理缺陷，不只是文案问题 | 规则应区分纯确认与“确认+附加实体”：后者需在同一原子动作中确认并填字段，或形成明确组合计划；测试覆盖完全解决、仍缺字段、纯确认、指定编号复合回答；PRESENT文案按最终remaining_fields如实显示 |
 | 21 | `P1` | `LLM-FOLLOWUP-STRICT-01` 缺字段追问复核（B-4 二次真实验收修正） | `TODO` | 二次真实验收（会话 213926）证实"将溶液加热"仍稳定追问 {temperature,duration}——**撤回"模型漂移"结论**；之前"加热到60摄氏度APP"不追问 duration，是口述场景不同（温度已明确 + APP 尾音干扰），非漂移。待干净复验：不带尾音的"加热到60摄氏度"缺时长是否应追问 | 确认"加热到60摄氏度"缺时长是否应追问（产品预期 vs LLM 行为） |
 | 22 | `P0` | `ASR-DEMO-NOISE-01` 路演前 ASR 噪音/误识别必修（用户 2026-08-16 明确"路演必须解决"） | `TODO` | 两次真实验收暴露的误识别：①"加热到60摄氏度"→"加热到60摄氏度APP"（尾音）；②"结束实验记录"→"要车翻圈啦"（language=auto 误判粤语 yue）；③"将溶液加热"→"标溶液加热"（首字误听）。**解决方向**：a) language 参数 auto→固定 zh（治粤语误判）；b) 热词/后处理（`ASR-CMD-02-POSTPROCESS-01` 已 REAL_OK，等组长定演示领域后接入）；c) 截音（AUDIO-PREROLL 尾音截断）；d) 噪声样例入语料（`ASR-NOISE-SAMPLES-01`） | **路演环境下核心口述/结束命令识别稳定、不乱识别**（路演硬门槛，不达不演） |
 | 23 | `P2` | LLM 返回格式错误导致降级（B-4 二次真实验收发现） | `TODO` | 段1"标溶液加热" llm_error="顶层字段不匹配；缺少=[control,experiment,uncertain]，额外=[reason]"——LLM 对误识别文本返回了 uncertain 分支格式但缺顶层字段，触发降级（数据未丢，原始记录已保存，优雅降级生效） | 观察 LLM 返回格式稳定性；必要时加格式修复/重试 |
+| 24 | `P1` | `PRESENT-ADMISSION-01` 用户呈现准入与去重复 | `AUTO_OK` | 四刀完成：会话提示去重复、基础设施转 logging、`IdleNoticeTracker`、`END_ONLY` 单一结束摘要。结束摘要合并实验步骤数与待确认明细，零待确认也明确显示。专项41/41、全量571/571通过 | 自动闭环；真实会话九维走查统一并入 `PRESENT-FINAL-UX-VERIFY-01` |
+| 25 | `P1` | `PRESENT-FEEDBACK-REGRESSION-01` 程序级与零待确认反馈补回 | `AUTO_OK` | 新增结构化 `PROGRAM_STATUS`（starting/ready/exited）和 keyword 合同化 `WAKE_ACK`；程序级 Coordinator/Pump 在初始化前启动，会话复用同一链路；启动期间和待机期间 Ctrl+C 都交付退出反馈；零待确认已由 END_ONLY 明确显示；程序状态与唤醒事实均经 projection→Intent。专项56/56、全量578/578通过 | 自动闭环；真实 user 模式可见性与去重复并入 `PRESENT-FINAL-UX-VERIFY-01` |
+| 26 | `P1` | `PRESENT-PUMP-FLUSH-01` pump 完成交付合同 | `AUTO_OK` | Coordinator 用原子 unfinished 计数覆盖 pending/deferred/in-flight；Pump 在 output 返回后 `mark_completed()`；`flush(timeout)` 区分超时与结构化交付失败，失败后继续交付后续消息 | 慢 output、失败隔离、去重/deferred 计数测试通过；专项24/24、全量584/584通过；真实尾消息复验并入最终 UX 验收 |
+| 27 | `P1` | `PRESENT-EXTENSION-SEAMS-01` QUERY/DENY/WARNING/导出呈现接缝 | `TODO` | 禁止未来功能不断在 `main.py` 手写 if/elif 投影；各自结构化结果经 projection→Intent；定义 WARNING 是否及如何抢占普通 FIFO；导出只读 SessionRecord，PRESENT 只消费开始/成功/失败结果 | Fake 合同覆盖四类来源；WARNING 调度规则明确且不破坏普通 FIFO；不解析 PRESENT 文案做导出 |
+| 28 | `P1` | `PRESENT-LEGACY-MESSAGE-CLEANUP-01` 删除旧 PresentationMessage 双轨 | `AUTO_OK` | 三个现役语义枚举归位到 `presentation_intent.py`；删除旧模块、旧对象、channel/status/speech policy 与专属 10 项测试，不留兼容别名 | `src/tests` 旧引用为0；专项86/86、删除后全量574/574通过；TTS/Web 交付模型留待第二真实渠道 |
+| 29 | `P1` | `PRESENT-FINAL-UX-VERIFY-01` PRESENT 最终真实验收 | `TODO` | user/admin 对照真实会话：反馈完整、无重复/泄漏、顺序正确、最后消息不丢，维1/7改善且维2/5/9不退化 | 下面“PRESENT 当前15项收口清单”核心项实现完成；记录 session_id、终端证据和九维结论 |
+| 30 | `P1` | `PRESENT-CLOSING-NAME-01` 收尾回执与正式 SessionSummary 消歧 | `AUTO_OK` | `MessageKind.SESSION_SUMMARY` 已改为 `SESSION_CLOSING_SUMMARY`，同步枚举值、copy 函数、main、测试与当前文档；`src/tests` 旧 PRESENT 名零残留，无兼容双名，无 SessionRecord/LLM 总结/导出扩张；专项41/41、全量571/571通过 | 自动闭环；真实输出随最终 PRESENT UX 会话统一复验 |
+| 31 | `P1` | `PRESENT-RECORD-PREVIEW-01` 规范记录预览替代 user 原始 ASR | `TODO` | 将已存在的 `accepted_analysis.events[].normalized_text` 以严格 `event_previews` 合同透传到 `RECORD_ACK`，user 显示“已记录实验步骤N：……”；原始 ASR 不再逐段占据 user 主界面，但继续落盘并在 admin/debug 或按需详情可查；不启用自由 `assistant_reply`、不新增 LLM 调用 | 分三步：A 先显示 ASR+规范预览做对照；B 验证稳定后移除 user TRANSCRIPT Intent；C 真实语音核对 ASR JSONL/Event JSONL/user/admin/追问/降级。单事件、多事件、标点、空预览、降级和非阻塞测试齐全 |
+| 32 | `P1` | `PRESENT-DELIVERY-BOUNDARY-01` Coordinator/Renderer/Pump 架构合同与渐进扩展纪律 | `TODO` | 固定唯一链路与职责边界：结构化结果→projection→`PresentationIntent`→Coordinator（排序/去重/生命周期）→Pump（执行交付并回执）→Renderer（纯格式化）→Sink（唯一 I/O）；普通新消息不得要求修改 Coordinator/Pump，用户可见输出不得绕过链路。消息内容随业务增量扩展；WARNING 在真实接入前补最小调度子步；TTS/Web 等第二真实渠道接入前才专门提取有限 Delivery/Renderer 抽象，不因未来可能性提前建设框架 | 文档职责/变化归属明确；架构护栏覆盖直接 print 泄漏、FIFO、in-flight flush、Renderer 无 I/O；阶段收口检查确认无跨层业务分支和重复交付实现 |
+
+#### PRESENT 当前 15 项收口清单（用户 2026-08-16 确认）
+
+> 本表是 PRESENT 当前范围的统一入口；复用已有任务 ID，不重复造任务。序号表示清单项，
+> 不覆盖全项目原有优先级。第 1–10、13–15 项属于核心收口，第 11–12 项是直接挂接 PRESENT 的体验增强。
+
+**执行分段（清单序号不等于施工顺序）：**
+
+```text
+阶段 A：1 END_ONLY 结束摘要
+→ 阶段 B：2 必要反馈 → 3 pump flush → 4 旧消息清理 → 13 收尾命名
+→ 阶段 C：5 泄漏 → 6 no_action → 8 user/admin → 9 文案一致 → 14 规范记录预览
+→ 阶段 D：15 交付边界护栏 → 7 扩展接缝
+→ 阶段 E：11 回答编号提示 → 12 事件提示音
+→ 阶段 F：10 最终真实 UX 验收
+```
+
+> 同一阶段内若实现依赖更紧，可调整小步顺序；任何调整必须先回写本表。
+
+| 序号 | 任务 | 当前状态 | 剩余结果 |
+|---:|---|---|---|
+| 1 | `PRESENT-ADMISSION-01` 呈现准入与去重复 | `AUTO_OK` | 四刀已完成，专项 41/41、全量 571/571 通过；真实走查留到第 10 项 |
+| 2 | `PRESENT-FEEDBACK-REGRESSION-01` 必要反馈补回 | `AUTO_OK` | 启动/就绪/唤醒/退出已走 projection→Intent→程序级共享 pump，零待确认已明确显示；专项 56/56、全量 578/578 通过 |
+| 3 | `PRESENT-PUMP-FLUSH-01` pump 完成交付合同 | `AUTO_OK` | unfinished 计数覆盖 pending/deferred/in-flight；flush 显式区分超时与交付失败；专项 24/24、全量 584/584 通过 |
+| 4 | `PRESENT-LEGACY-MESSAGE-CLEANUP-01` 删除旧消息双轨 | `AUTO_OK` | 旧模块、旧对象、专属 channel/status/speech policy 和 10 项旧测试已删除；现役枚举归位 Intent；专项86/86、全量574/574通过 |
+| 5 | `PRESENT-FIX-LEAK-01` 开发输出泄漏收尾 | `REAL_OK` | 会话142945确认全程零泄漏；双会话143151→143201进一步确认同进程再次唤醒、两个新会话编号、WAITING/EXITED与程序级Pump生命周期均正确；专项63/63、全量576/576通过 |
+| 6 | `PRESENT-NOACTION-FEEDBACK-01` no_action 容错反馈 | `TODO` | 编号不存在、无目标回答、无法暂缓/弃权等场景不再沉默 |
+| 7 | `PRESENT-EXTENSION-SEAMS-01` 扩展接缝 | `TODO` | QUERY/DENY/WARNING/导出结果统一 projection→Intent；定义 WARNING 抢占规则 |
+| 8 | `UX-MODE-01` user/admin 输出分层 | `部分完成，任务状态待校准` | 程序级反馈分层、按会话日志、user/admin 真实对照验收 |
+| 9 | `SYNC-UI-CLAIMS-01` 文案与行为一致 | `部分完成` | 删除“提交 M 段”等内部术语，统一核查用户承诺与真实行为 |
+| 10 | `PRESENT-FINAL-UX-VERIFY-01` 最终真实验收 | `TODO` | 验证反馈完整、无重复/泄漏、顺序正确、尾消息不丢及九维不退化 |
+| 11 | `GAPS-FIX-ANSWER-HINT-01` 回答编号提示 | `TODO` | 存在待确认项时，引导用户用“问题一，……”明确回答目标 |
+| 12 | `UX-FIX-TONE-01` 事件提示音 | `TODO` | 追问/回执/降级/失败等需注意事件播放提示音；提示音不等于 TTS |
+| 13 | `PRESENT-CLOSING-NAME-01` 收尾回执命名消歧 | `AUTO_OK` | 已统一为 `SESSION_CLOSING_SUMMARY`，无兼容双名和旧 PRESENT 引用；专项 41/41、全量 571/571 通过 |
+| 14 | `PRESENT-RECORD-PREVIEW-01` 规范记录预览 | `TODO` | user 用 `normalized_text` 核对系统最终采纳事实，原始 ASR 继续保存并转 admin/debug/按需详情；禁止自由 assistant_reply 和额外 LLM 调用 |
+| 15 | `PRESENT-DELIVERY-BOUNDARY-01` 交付链路架构合同 | `TODO` | 固定 Coordinator/Renderer/Pump/Sink 职责、生命周期和变化归属；QUERY/DENY 等随业务扩，WARNING 按真实调度需求扩，TTS/Web 在第二真实渠道接入前做有限架构子步；禁止过早通用化，也禁止绕过统一链路 |
 
 ### 3.1B 已完成看板（近期已闭环，证据详见维护日志）
 
@@ -302,7 +358,7 @@ TTS-01 接口和假客户端
 | 会话控制 | 状态机、后台队列、顺序、背压、优雅退出 | 已有完整上下文，交给多人同时修改容易产生时序故障 |
 | 实验理解 | LLMClient、结构化事件、原文保护、降级 | 当前项目的核心差异化能力 |
 | 追问确认 | PendingClarification、指定回答、修正与收尾 | 与语音上下文和实验事件高度相关 |
-| 消息协调 | PresentationMessage、Presenter、未来TTS播放策略 | 决定何时说、显示什么、失败怎样降级，不等于负责前端样式 |
+| 消息协调 | PresentationIntent、Coordinator/Pump、未来TTS播放策略 | 决定何时说、显示什么、失败怎样降级，不等于负责前端样式 |
 | 会话记录 | SessionRecord、总结、Markdown/JSON第一版导出 | 负责把现场事实形成完整、可追溯记录 |
 
 ### A：建议新增的“跨模块学习型主责”
@@ -558,7 +614,7 @@ A负责提供稳定消息协议和Mock数据，不应让前端直接读取 `main
 
 | ID | 优先级 | 任务 | 状态 | 验收证据/备注 |
 |---|---|---|---|---|
-| `PRESENT-01` | `P1` | 定义 PresentationMessage 数据结构 | `AUTO_OK` | 10项协议单测及全量118项通过；移除RECORD消息渠道，增加ScreenTarget |
+| `PRESENT-01` | `P1` | 定义 PresentationMessage 数据结构 | `RETIRED` | 早期探索合同帮助识别 kind/priority/target 与渠道/状态/朗读策略的边界；稳定主链改用 `PresentationIntent` 后，旧对象及10项专属测试已由 `PRESENT-LEGACY-MESSAGE-CLEANUP-01` 删除 |
 | `PRESENT-02` | `P1` | 当前回答回执优先于旧后台追问 | `REAL_OK` | 会话20260808_141435中暂缓/回看回执先展示，随后才展示ASR期间完成的旧后台结果 |
 | `PRESENT-03` | `P1` | 按认知负担预算组成语音消息组 | `DESIGN` | 默认最多2条、50字、1个问题；支持“回执+相关问题” |
 | `PRESENT-04` | `P1` | 内部口述编号与用户实验步骤编号分离 | `TODO` | 确认答复占号导致实验步骤从2跳到4；依赖 `SESSION-IDENTITY-CONTRACT-01` 的编号合同，先定合同再改展示，避免打补丁 |
@@ -650,7 +706,7 @@ A负责提供稳定消息协议和Mock数据，不应让前端直接读取 `main
 | `SAFETY-E2E-01` | `P2` | `SAFETY-RULES-01` | 真实口述触发警告；WARN_BUT_PROCEED / BLOCK_UNTIL_ACKNOWLEDGED 两类路径验收 |
 | `RAG-CONTEXT-01` | `P2` | Phase 1 + `RAG-CONTEXT-CONTRACT-01` | 将真实 user_profile + knowledge_hits 组装为 EnrichedContext，再转换为 prompt 输入 |
 | `RAG-RETRIEVE-01` | `P2` | `RAG-CONTEXT-01` | 实现真实 KnowledgeBase（SOP 文档索引 + 设备状态查询） |
-| `QUERY-ANSWER-01` | `P2` | `RAG-RETRIEVE-01` | KNOWLEDGE_BASE 目标接真实 KnowledgeBase.search() → QueryAnswerResult → PresentationMessage |
+| `QUERY-ANSWER-01` | `P2` | `RAG-RETRIEVE-01` | KNOWLEDGE_BASE 目标接真实 KnowledgeBase.search() → QueryAnswerResult → projection → PresentationIntent |
 | `QUERY-E2E-01` | `P2` | `QUERY-ANSWER-01` | 真实 ASR→统一理解→知识库→回答；设备占用/实验时间/协议参考/通用知识四类验收 |
 
 #### I.3 为什么不倒过来（先接能力再补类型）

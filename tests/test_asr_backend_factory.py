@@ -1,8 +1,9 @@
+import os
 import tempfile
 import unittest
 import wave
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from src.asr.backend import ASRBackend
 from src.asr.factory import create_asr_backend
@@ -66,6 +67,49 @@ class ASRBackendFactoryTests(unittest.TestCase):
 
 
 class SenseVoiceBackendTests(unittest.TestCase):
+    def test_real_engine_initialization_disables_external_noise(self):
+        fake_auto_model = MagicMock(return_value=FakeEngine([]))
+        fake_funasr = type("FakeFunASR", (), {"AutoModel": fake_auto_model})
+        version_checker = type(
+            "FakeVersionChecker",
+            (),
+            {"check_for_update": lambda disable=False: "not-suppressed"},
+        )
+        fake_utils = type(
+            "FakeUtils",
+            (),
+            {"version_checker": version_checker},
+        )
+
+        with (
+            patch.dict(
+                "sys.modules",
+                {
+                    "funasr": fake_funasr,
+                    "funasr.utils": fake_utils,
+                },
+            ),
+            patch.dict(
+                "sys.modules",
+                {
+                    "funasr.utils.postprocess_utils": type(
+                        "FakePostprocess",
+                        (),
+                        {"rich_transcription_postprocess": lambda text: text},
+                    )
+                },
+            ),
+            patch.dict("os.environ", {}, clear=False),
+        ):
+            SenseVoiceBackend()
+            self.assertEqual(os.environ["TQDM_DISABLE"], "1")
+            self.assertIsNone(version_checker.check_for_update())
+
+        kwargs = fake_auto_model.call_args.kwargs
+        self.assertTrue(kwargs["disable_update"])
+        self.assertTrue(kwargs["disable_pbar"])
+        self.assertTrue(kwargs["disable_log"])
+
     def test_converts_model_output_to_shared_result(self):
         engine = FakeEngine([
             {"text": "<|zh|>移液枪😊"},
@@ -96,6 +140,8 @@ class SenseVoiceBackendTests(unittest.TestCase):
         self.assertEqual(len(engine.calls), 1)
         self.assertEqual(engine.calls[0]["language"], "zh")
         self.assertTrue(engine.calls[0]["use_itn"])
+        self.assertTrue(engine.calls[0]["disable_pbar"])
+        self.assertTrue(engine.calls[0]["disable_log"])
 
     def test_missing_audio_fails_before_model_call(self):
         engine = FakeEngine([{"text": "不应调用"}])

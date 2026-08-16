@@ -46,22 +46,27 @@ from src.core.presentation_coordinator import (
     PresentationCoordinator,
 )
 from src.core.presentation_copy import (
+    ProgramStatus,
     ReviewItem,
 )
 from src.core.presentation_intent import (
-    PresentationIntent,
-)
-from src.core.presentation_message import (
     MessageKind,
     MessagePriority,
+    PresentationIntent,
     ScreenTarget,
 )
 from src.core.presentation_projection import (
     messages_for_observation,
+    messages_for_program_status,
     messages_for_review,
+    messages_for_wake_ack,
 )
 from src.core.presentation_pump import (
+    PresentationDeliveryError,
     PresentationPump,
+)
+from src.core.presentation_timing import (
+    IdleNoticeTracker,
 )
 from src.core.terminal_renderer import (
     TerminalRenderer,
@@ -184,6 +189,8 @@ def run_experiment_session(
     state_manager: StateManager,
     observer: UnifiedObserver,
     executor=None,
+    presentation_coordinator: PresentationCoordinator | None = None,
+    presentation_pump: PresentationPump | None = None,
 ) -> None:
     """
     运行一次完整实验会话。
@@ -229,11 +236,21 @@ def run_experiment_session(
     # 会话级"待确认结束"标志：后台识别到结束意图时置真，主循环读它。
     pending_end_confirmation = {"value": False}
 
-    # 呈现链路：后台 worker 只投递 Intent，pump 是唯一 stdout 写入者。
-    coordinator = PresentationCoordinator()
-    renderer = TerminalRenderer(ui_mode=UI_MODE)
-    pump = PresentationPump(coordinator, renderer, output=print)
-    pump.start()
+    # 生产环境复用程序级 pump，保证启动/唤醒/会话/退出共用单一输出权。
+    # 独立测试可不注入，由本函数创建并回收本地呈现链。
+    owns_presentation = presentation_coordinator is None
+    if owns_presentation:
+        coordinator = PresentationCoordinator()
+        renderer = TerminalRenderer(ui_mode=UI_MODE)
+        pump = PresentationPump(coordinator, renderer, output=print)
+        pump.start()
+    else:
+        if presentation_pump is None:
+            raise ValueError(
+                "注入 presentation_coordinator 时必须同时注入 presentation_pump。"
+            )
+        coordinator = presentation_coordinator
+        pump = presentation_pump
 
     # 实验步骤计数器：只对结构化实验段递增，供投影层做编号分离（UX-07）。
     experiment_step_counter = {"value": 0}
@@ -315,6 +332,7 @@ def run_experiment_session(
     last_activity_time = (
         time.monotonic()
     )
+    idle_notice_tracker = IdleNoticeTracker()
 
     state_manager.change_to(
         AssistantState.SESSION_ACTIVE
@@ -325,15 +343,12 @@ def run_experiment_session(
         "实验记录会话已开始。\n"
         f"会话编号：{session_id}\n"
         "现在可以连续口述，无需等待 LLM 处理完成。\n"
-        "说“结束实验记录”可以结束本次会话。",
+        "说“结束实验记录”可以结束本次会话。\n"
+        "请开始口述实验过程，说完后自然停顿即可。",
     )
 
     while True:
         try:
-            emit(
-                MessageKind.STAGE_SUMMARY,
-                "请开始口述实验过程，说完后自然停顿即可。",
-            )
             asr_result = (
                 recognize_one_segment(
                     recorder=recorder,
@@ -347,6 +362,7 @@ def run_experiment_session(
             last_activity_time = (
                 time.monotonic()
             )
+            idle_notice_tracker.reset()
 
             emit(
                 MessageKind.TRANSCRIPT,
@@ -393,7 +409,6 @@ def run_experiment_session(
             for task in completed:
                 if account_completed_task(task):
                     experiment_segment_count += 1
-            emit(MessageKind.STAGE_SUMMARY, "系统将立即继续监听。")
 
         except TimeoutError:
             idle_seconds = (
@@ -418,11 +433,11 @@ def run_experiment_session(
                 - idle_seconds
             )
 
-            emit(
-                MessageKind.STAGE_SUMMARY,
-                "暂时没有检测到口述，实验会话继续等待。"
-                f"距离自动结束约还有 {remaining_seconds:.0f} 秒。",
+            idle_notice = idle_notice_tracker.message_for_timeout(
+                remaining_seconds
             )
+            if idle_notice is not None:
+                emit(MessageKind.STAGE_SUMMARY, idle_notice)
 
         except Exception as error:
             emit(
@@ -442,43 +457,41 @@ def run_experiment_session(
         if account_completed_task(task):
             experiment_segment_count += 1
 
-    emit(
-        MessageKind.SESSION_SUMMARY,
-        f"实验会话结束，共处理 {utterance_count} 段会话口述，"
-        f"其中提交 {experiment_segment_count} 段实验口述。",
-    )
     logging.debug(
         "最终上下文包含 %s 条事件。",
         len(session_context),
     )
 
     active = reply_coordinator.active_clarifications()
-    if active:
-        coordinator.submit([PresentationIntent(
-            intent_id=f"{session_id}-final-review",
-            kind=MessageKind.CLARIFICATION_REVIEW,
-            args={
-                "items": tuple(
-                    ReviewItem(
-                        display_number=clarification.display_number,
-                        is_deferred=(
-                            clarification.status
-                            == ClarificationStatus.DEFERRED
-                        ),
-                        question=clarification.question,
-                    )
-                    for clarification in active
-                ),
-            },
-            priority=MessagePriority.REVIEW,
-            screen_target=ScreenTarget.DIALOGUE,
-        )])
+    coordinator.submit([PresentationIntent(
+        intent_id=f"{session_id}-closing-summary",
+        kind=MessageKind.SESSION_CLOSING_SUMMARY,
+        args={
+            "experiment_step_count": experiment_segment_count,
+            "pending_items": tuple(
+                ReviewItem(
+                    display_number=clarification.display_number,
+                    is_deferred=(
+                        clarification.status
+                        == ClarificationStatus.DEFERRED
+                    ),
+                    question=clarification.question,
+                )
+                for clarification in active
+            ),
+        },
+        priority=MessagePriority.SUMMARY,
+        screen_target=ScreenTarget.SUMMARY,
+    )])
 
-    # 等 pump 渲染完剩余消息再停止，避免丢最后几条回执。
-    deadline = time.monotonic() + 2.0
-    while coordinator.pending_count > 0 and time.monotonic() < deadline:
-        time.sleep(0.01)
-    pump.stop(timeout=1)
+    # flush 同时等待队列中和已取走正在交付的消息。
+    try:
+        if not pump.flush(timeout=2.0):
+            logging.error("会话收尾呈现交付超时。")
+    except PresentationDeliveryError as error:
+        logging.error("会话收尾呈现交付失败：%s", error)
+    if owns_presentation:
+        pump.stop(timeout=1)
 
 def configure_logging() -> None:
     """按 UI_MODE 配置日志：user 写文件，admin 输出屏幕。"""
@@ -506,100 +519,145 @@ def main() -> None:
 
     configure_logging()
 
-    state_manager = StateManager()
-
-    recorder = VadAudioRecorder(
-        start_timeout_seconds=30.0
+    presentation_coordinator = PresentationCoordinator()
+    presentation_renderer = TerminalRenderer(ui_mode=UI_MODE)
+    presentation_pump = PresentationPump(
+        presentation_coordinator,
+        presentation_renderer,
+        output=print,
     )
+    presentation_pump.start()
+    program_intent_counter = 0
 
-    asr_store = ASRResultStore()
+    def next_program_request_id() -> str:
+        nonlocal program_intent_counter
+        program_intent_counter += 1
+        return f"program-{program_intent_counter}"
 
-    confirmation_store = (
-        ConfirmationStore()
-    )
+    def stop_presentation() -> None:
+        """确认已入队的程序级反馈完成交付后停止 pump。"""
 
-    event_store = (
-        ExperimentEventStore()
-    )
+        try:
+            if not presentation_pump.flush(timeout=2.0):
+                logging.error("程序退出时呈现交付超时。")
+        except PresentationDeliveryError as error:
+            logging.error("程序退出时呈现交付失败：%s", error)
+        presentation_pump.stop(timeout=1)
 
-    observer = create_unified_observer()
+    presentation_coordinator.submit(messages_for_program_status(
+        ProgramStatus.STARTING,
+        request_id=next_program_request_id(),
+    ))
 
-    # ASR 模型只在程序启动时
-    # 加载一次。
-    recognizer = create_asr_backend()
+    try:
+        state_manager = StateManager()
 
-    # 唤醒模型也只在程序启动时
-    # 加载一次。
-    wakeword_detector = (
-        WakeWordDetector(
-            model_dir=(
-                WAKEWORD_MODEL_DIR
-            ),
-            keywords_file=(
-                WAKEWORD_KEYWORDS_FILE
-            )
+        recorder = VadAudioRecorder(
+            start_timeout_seconds=30.0
         )
-    )
 
-    logging.info("实验语音智能体已启动。按 Ctrl+C 关闭程序。")
+        asr_store = ASRResultStore()
+
+        confirmation_store = (
+            ConfirmationStore()
+        )
+
+        event_store = (
+            ExperimentEventStore()
+        )
+
+        observer = create_unified_observer()
+
+        # ASR 模型只在程序启动时加载一次。
+        recognizer = create_asr_backend()
+
+        # 唤醒模型也只在程序启动时加载一次。
+        wakeword_detector = WakeWordDetector(
+            model_dir=WAKEWORD_MODEL_DIR,
+            keywords_file=WAKEWORD_KEYWORDS_FILE,
+        )
+    except KeyboardInterrupt:
+        presentation_coordinator.submit(messages_for_program_status(
+            ProgramStatus.EXITED,
+            request_id=next_program_request_id(),
+        ))
+        stop_presentation()
+        return
+
+    presentation_coordinator.submit(messages_for_program_status(
+        ProgramStatus.READY,
+        request_id=next_program_request_id(),
+    ))
 
     # 唤醒连续失败次数：每次失败按指数退避等待，
     # 成功后重置为 0，避免音频设备异常时疯狂转圈。
     consecutive_failures = 0
 
-    while True:
-        state_manager.change_to(
-            AssistantState.IDLE
-        )
+    try:
+        while True:
+            try:
+                state_manager.change_to(
+                    AssistantState.IDLE
+                )
 
-        try:
-            detected_keyword = (
-                wakeword_detector
-                .wait_for_wake_word()
-            )
-            consecutive_failures = 0
+                detected_keyword = (
+                    wakeword_detector
+                    .wait_for_wake_word()
+                )
+                consecutive_failures = 0
 
-            logging.info("唤醒成功：%s", detected_keyword)
+                presentation_coordinator.submit(messages_for_wake_ack(
+                    detected_keyword,
+                    request_id=next_program_request_id(),
+                ))
 
-            play_wake_tone()
+                play_wake_tone()
 
-            run_experiment_session(
-                recorder=recorder,
-                recognizer=recognizer,
-                asr_store=asr_store,
-                event_store=event_store,
-                confirmation_store=(
-                    confirmation_store
-                ),
-                state_manager=(
-                    state_manager
-                ),
-                observer=observer
-            )
-
-        except Exception as error:
-            consecutive_failures += 1
-            retry_delay = next_backoff_delay(
-                consecutive_failures
-            )
-            logging.error(
-                "唤醒或会话异常：%s: %s。"
-                "系统将重新进入待机状态，%.1f 秒后重试"
-                "（连续第 %s 次）。",
-                type(error).__name__,
-                error,
-                retry_delay,
-                consecutive_failures,
-            )
-            time.sleep(retry_delay)
-
-        finally:
-            state_manager.change_to(
-                AssistantState.IDLE
-            )
+                run_experiment_session(
+                    recorder=recorder,
+                    recognizer=recognizer,
+                    asr_store=asr_store,
+                    event_store=event_store,
+                    confirmation_store=(
+                        confirmation_store
+                    ),
+                    state_manager=(
+                        state_manager
+                    ),
+                    observer=observer,
+                    presentation_coordinator=presentation_coordinator,
+                    presentation_pump=presentation_pump,
+                )
+                presentation_coordinator.submit(messages_for_program_status(
+                    ProgramStatus.WAITING,
+                    request_id=next_program_request_id(),
+                ))
+            except Exception as error:
+                consecutive_failures += 1
+                retry_delay = next_backoff_delay(
+                    consecutive_failures
+                )
+                logging.error(
+                    "唤醒或会话异常：%s: %s。"
+                    "系统将重新进入待机状态，%.1f 秒后重试"
+                    "（连续第 %s 次）。",
+                    type(error).__name__,
+                    error,
+                    retry_delay,
+                    consecutive_failures,
+                )
+                time.sleep(retry_delay)
+            finally:
+                state_manager.change_to(
+                    AssistantState.IDLE
+                )
+    except KeyboardInterrupt:
+        presentation_coordinator.submit(messages_for_program_status(
+            ProgramStatus.EXITED,
+            request_id=next_program_request_id(),
+        ))
+    finally:
+        stop_presentation()
 
 if __name__ == "__main__":
-    try:
-        main()
-    except KeyboardInterrupt:
-        logging.info("用户关闭程序。")
+    main()

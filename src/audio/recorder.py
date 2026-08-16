@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 from pathlib import Path
 
@@ -11,6 +12,9 @@ from src.config import (
     RECORDINGS_DIR,
     SAMPLE_RATE,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 class AudioRecorder:
@@ -34,11 +38,11 @@ class AudioRecorder:
             status,
         ):
             if status:
-                print(f"录音状态：{status}")
+                logger.warning("录音状态：%s", status)
 
             chunks.append(indata.copy())
 
-        print("正在录音，再按 Enter 结束……")
+        logger.info("正在录音，再按 Enter 结束……")
 
         with sd.InputStream(
             samplerate=self.sample_rate,
@@ -79,6 +83,6 @@ class AudioRecorder:
             subtype="PCM_16",
         )
 
-        print(f"录音已保存：{output_path}")
+        logger.info("录音已保存：%s", output_path)
 
         return output_path

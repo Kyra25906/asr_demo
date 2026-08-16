@@ -2,14 +2,15 @@ import unittest
 
 from src.core.presentation_copy import (
     ConfirmationAckResult,
+    ProgramStatus,
     RecordAckResult,
     ReviewItem,
     copy_for_intent,
 )
-from src.core.presentation_intent import PresentationIntent
-from src.core.presentation_message import (
+from src.core.presentation_intent import (
     MessageKind,
     MessagePriority,
+    PresentationIntent,
     ScreenTarget,
 )
 
@@ -23,6 +24,64 @@ def _make_intent(kind, *, args, source_segment_id=4, screen_target=None):
         screen_target=screen_target or ScreenTarget.STATUS,
         source_segment_id=source_segment_id,
     )
+
+
+class ProgramFeedbackCopyTests(unittest.TestCase):
+    def test_program_statuses_use_fixed_user_copy(self):
+        expected = {
+            ProgramStatus.STARTING: "实验语音智能体正在启动，请稍候。",
+            ProgramStatus.READY: (
+                "实验语音智能体已就绪，正在等待唤醒。"
+                "按 Ctrl+C 可以退出程序。"
+            ),
+            ProgramStatus.WAITING: (
+                "已返回待机。可以再次说“小科小科”开始新会话；"
+                "按 Ctrl+C 退出程序。"
+            ),
+            ProgramStatus.EXITED: "已退出实验语音智能体。",
+        }
+
+        for status, expected_text in expected.items():
+            with self.subTest(status=status):
+                text = copy_for_intent(
+                    _make_intent(
+                        MessageKind.PROGRAM_STATUS,
+                        args={"status": status},
+                    ),
+                    ui_mode="user",
+                )
+                self.assertEqual(text, expected_text)
+
+    def test_wake_ack_uses_keyword_contract(self):
+        text = copy_for_intent(
+            _make_intent(
+                MessageKind.WAKE_ACK,
+                args={"keyword": " 小科小科 "},
+            ),
+            ui_mode="user",
+        )
+
+        self.assertEqual(text, "唤醒成功：小科小科")
+
+    def test_program_feedback_rejects_missing_or_unknown_args(self):
+        with self.assertRaises(ValueError):
+            copy_for_intent(
+                _make_intent(MessageKind.PROGRAM_STATUS, args={}),
+                ui_mode="user",
+            )
+        with self.assertRaises(ValueError):
+            copy_for_intent(
+                _make_intent(
+                    MessageKind.PROGRAM_STATUS,
+                    args={"status": "unknown"},
+                ),
+                ui_mode="user",
+            )
+        with self.assertRaises(ValueError):
+            copy_for_intent(
+                _make_intent(MessageKind.WAKE_ACK, args={"keyword": " "}),
+                ui_mode="user",
+            )
 
 
 class RecordAckCopyTests(unittest.TestCase):
@@ -382,6 +441,64 @@ class PassthroughCopyTests(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             copy_for_intent(intent, ui_mode="user")
+
+
+class SessionClosingSummaryCopyTests(unittest.TestCase):
+    def test_summary_explicitly_reports_no_pending_questions(self):
+        intent = _make_intent(
+            MessageKind.SESSION_CLOSING_SUMMARY,
+            args={
+                "experiment_step_count": 2,
+                "pending_items": (),
+            },
+        )
+
+        text = copy_for_intent(intent, ui_mode="user")
+
+        self.assertEqual(
+            text,
+            "实验记录会话已结束。\n"
+            "本次共记录 2 个实验步骤。\n"
+            "没有待确认问题。",
+        )
+
+    def test_summary_includes_pending_question_details(self):
+        intent = _make_intent(
+            MessageKind.SESSION_CLOSING_SUMMARY,
+            args={
+                "experiment_step_count": 1,
+                "pending_items": (
+                    ReviewItem(1, False, "加热多长时间？"),
+                    ReviewItem(2, True, "温度是多少？"),
+                ),
+            },
+        )
+
+        text = copy_for_intent(intent, ui_mode="user")
+
+        self.assertEqual(text.count("会话已结束"), 1)
+        self.assertIn("仍有 2 个待确认问题", text)
+        self.assertIn("问题 1（待回答）：加热多长时间？", text)
+        self.assertIn("问题 2（已暂缓）：温度是多少？", text)
+
+    def test_summary_rejects_invalid_contract(self):
+        with self.assertRaises(ValueError):
+            copy_for_intent(
+                _make_intent(
+                    MessageKind.SESSION_CLOSING_SUMMARY,
+                    args={"experiment_step_count": -1, "pending_items": ()},
+                ),
+                ui_mode="user",
+            )
+
+        with self.assertRaises(ValueError):
+            copy_for_intent(
+                _make_intent(
+                    MessageKind.SESSION_CLOSING_SUMMARY,
+                    args={"experiment_step_count": 0, "pending_items": []},
+                ),
+                ui_mode="user",
+            )
 
 
 if __name__ == "__main__":

@@ -1,6 +1,7 @@
 """SenseVoiceSmall对项目统一ASR合同的适配器。"""
 
 import logging
+import os
 import time
 from pathlib import Path
 from typing import Any, Callable
@@ -36,7 +37,20 @@ class SenseVoiceBackend:
         self.device = device
 
         if model_engine is None:
+            # FunASR/ModelScope 会在模型初始化期间自行创建 tqdm 和下载日志。
+            # 使用依赖原生开关，避免全局重定向 stdout/stderr 吞掉并发 Pump 输出。
+            os.environ["TQDM_DISABLE"] = "1"
+            logging.getLogger("modelscope_hub.download").setLevel(
+                logging.WARNING
+            )
+            logging.getLogger("modelscope").setLevel(logging.WARNING)
+
             from funasr import AutoModel
+            from funasr.utils import version_checker
+
+            # FunASR 1.4.1 即使 disable_update=True，仍会在检查开关前
+            # 直接 print 版本号。只替换该版本检查入口，避免进程级重定向。
+            version_checker.check_for_update = lambda disable=False: None
 
             logger.info("正在加载SenseVoice ASR模型……")
             model_engine = AutoModel(
@@ -46,6 +60,9 @@ class SenseVoiceBackend:
                     "max_single_segment_time": 30_000,
                 },
                 device=device,
+                disable_update=True,
+                disable_pbar=True,
+                disable_log=True,
             )
             logger.info("SenseVoice ASR模型加载完成")
 
@@ -91,6 +108,8 @@ class SenseVoiceBackend:
             language=language,
             use_itn=True,
             batch_size_s=60,
+            disable_pbar=True,
+            disable_log=True,
         )
         recognition_seconds = (
             time.perf_counter() - start_time

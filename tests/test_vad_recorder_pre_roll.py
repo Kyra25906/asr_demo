@@ -2,6 +2,7 @@ import tempfile
 import unittest
 from datetime import datetime
 from pathlib import Path
+from unittest.mock import patch
 
 import numpy as np
 
@@ -202,6 +203,37 @@ class VadAudioRecorderPreRollTests(unittest.TestCase):
             recorder.record_until_silence()
 
         self.assertEqual(events[:2], ["stream_entered", "ready"])
+
+    def test_default_internal_status_uses_logging_not_print(self):
+        vad = FakeVad(
+            speech_on_read=1,
+            ready_on_read=1,
+            segment=FakeSegment(samples=[1], start=0),
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            recorder = VadAudioRecorder(
+                pre_roll_seconds=1 / 16_000,
+                vad=vad,
+                input_stream_factory=lambda **kwargs: FakeInputStream(
+                    [np.array([[1]], dtype=np.float32)]
+                ),
+                audio_writer=lambda *args, **kwargs: None,
+                clock=lambda: 0.0,
+                recordings_dir=Path(directory),
+            )
+
+            with (
+                patch("builtins.print") as output,
+                self.assertLogs("src.audio.vad_recorder", level="INFO") as logs,
+            ):
+                recorder.record_until_silence()
+
+        output.assert_not_called()
+        combined = "\n".join(logs.output)
+        self.assertIn("麦克风已准备好", combined)
+        self.assertIn("检测到人声", combined)
+        self.assertIn("录音已保存", combined)
 
 
 if __name__ == "__main__":

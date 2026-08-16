@@ -3237,3 +3237,342 @@ ASR 保存失败 → `continue`（跳过整段，不继续事件保存）。因�
 
 - **验收与体验边界**：全量 562/562 通过（+3 透传测试）。本轮大幅改了用户可见输出面（屏幕消息全部走 pump、去开发语言），**真实验收 + 九维走查（维 1/2/4/5/6/7/9）待 B-4 统一做，需用户授权数据外发**。
 - **下一步原因**：做 B-4 真实验收——真实麦克风/ASR/LLM 会话，验证 6 条完成标准的第 6 条"无重复/丢失/延迟退化"，并九维走查。
+
+## 2026-08-16（PRESENT 呈现准入第四刀）：END_ONLY 单一结束摘要
+
+### 1. 目的
+
+结束会话时，用户只看到一个完整收尾块：本次记录了多少实验步骤、还有哪些问题待确认。
+避免先说“会话结束”，随后又单独弹出待确认列表。
+
+### 2. 技术路线
+
+`main.py` 在后台队列排空后读取 `experiment_segment_count` 和会话级
+`ReplyCoordinator.active_clarifications()`，组成一条结构化 `SESSION_CLOSING_SUMMARY`
+Intent；`presentation_copy.py` 再把它渲染成多行结束摘要。
+
+### 3. 设计原因
+
+摘要传“步骤数 + 待确认快照”，不传已拼好的自由文本。这样终端文案改动时不需要反向解析字符串，
+未来 Web 也能直接使用同一份结构化事实。本轮不建正式 LLM `SessionSummary`，防止即时收尾回执和未来内容总结混为一个概念。
+
+### 4. 实现功能
+
+- `src/core/presentation_copy.py`：新增 `_copy_session_closing_summary`，验证非负步骤数和 `ReviewItem` 元组；
+- `src/main.py`：删除自由文本结束汇总和独立最终 review，改为一条 SUMMARY 投递；
+- `tests/test_presentation_copy.py`：覆盖零问题、有问题、非法合同；
+- `tests/test_main_nonblocking.py`：覆盖结束块只出现一次和旧内部术语消失。
+
+### 5. 本轮知识
+
+**知识点一：复合视图模型。**
+
+- 白话解释：结束摘要像一张结账单，不是好几张小票先后塞给用户。
+- 专业术语：复合视图模型（Composite View Model），即一个展示单元同时携带多类相关事实。
+- 项目体现：`SESSION_CLOSING_SUMMARY.args` 同时携带 `experiment_step_count` 和 `pending_items`。
+
+**知识点二：边界上的数据校验。**
+
+- 白话解释：文案层收到的数据不对时要立即报错，不能拼出“-1 个步骤”这种假话。
+- 专业术语：合同校验（Contract Validation）与快速失败（Fail Fast）。
+- 项目体现：`_copy_session_closing_summary` 拒绝负数、布尔值步骤数和非元组问题列表。
+
+**知识点三：空集合也是用户信息。**
+
+- 白话解释：“没有问题”不等于“什么都不说”；前者让用户放心，后者让用户怀疑系统是否漏了东西。
+- 专业术语：显式空状态（Explicit Empty State）。
+- 项目体现：`pending_items == ()` 时固定输出“没有待确认问题”。
+
+### 6. 验收方法
+
+- 专项：`python -B -m unittest tests.test_presentation_copy tests.test_terminal_renderer tests.test_main_nonblocking -v`，41/41 通过；
+- 全量：`python -B -m unittest discover -s tests -v`，571/571 通过；
+- 正常路径：有待确认项时在同一块列出；
+- 边界路径：零实验步骤、零待确认仍得到完整摘要；
+- 失败路径：非法计数或问题列表在文案边界直接拒绝。
+
+### 7. 下一步
+
+`PRESENT-FEEDBACK-REGRESSION-01`：补回启动、唤醒成功和用户主动退出反馈。这些是用户判断程序是否就绪、
+是否听到唤醒、是否已安全退出的必要信号；本轮故意不连续实施它，保持一轮一个可独立验证能力。
+
+### 补充：收尾回执命名已同轮消歧
+
+- 白话解释：“收银台结账单”不能叫“年度经营总结”。它们都是总结，但内容、生成时机和责任完全不同。
+- 专业术语：语义命名（Semantic Naming）和概念消歧（Disambiguation）。名字要表达对象的真实责任，而不是只表达它们“看起来像”。
+- 项目体现：即时收尾 Intent 统一改为 `SESSION_CLOSING_SUMMARY`；未来 LLM-10 仍可使用领域概念 `SessionSummary`。没有保留旧别名，避免双轨。
+
+## 2026-08-16（PRESENT-FEEDBACK-REGRESSION-01）：程序级必要反馈
+
+### 1. 目的
+
+恢复用户判断程序生命周期所必需的四个信号：正在启动、已就绪、唤醒成功、已退出。
+之前这些信息被迁到 logging 后，user 模式日志写文件，屏幕上反而看不到关键状态。
+
+### 2. 技术路线
+
+PRESENT pump 从 `run_experiment_session()` 的单会话生命周期上移到 `main()` 的程序生命周期。
+`main()` 创建一个 Coordinator/Renderer/Pump，程序级反馈直接投递，每次实验会话注入并复用这组对象。
+
+### 3. 设计原因
+
+如果启动和退出直接 `print`，会重新制造第二个 stdout 写入者；如果继续用 logging，user 模式又看不到。
+因此不是“补几个 print”，而是让统一呈现链真正覆盖整个程序生命周期。
+
+### 4. 实现功能
+
+- `MessageKind.PROGRAM_STATUS`：承载 starting/ready/exited；
+- `ProgramStatus`：限定可用状态，文案层拒绝未知值；
+- `WAKE_ACK`：从自由 `text` 透传改为结构化 `keyword` 参数；
+- `main()`：模型初始化前启动 pump，初始化完成后才说“已就绪”；
+- `run_experiment_session()`：生产环境注入程序级链，独立测试仍可自建本地链；
+- Ctrl+C：覆盖启动期间和运行期间，退出反馈后再停 pump。
+
+### 5. 本轮知识
+
+**知识点一：资源生命周期必须覆盖使用它的最大作用域。**
+
+- 白话解释：大门门卫不能每进一个房间才临时出现；它必须从进大楼到离开大楼一直在。
+- 专业术语：资源所有权（Resource Ownership）与生命周期上移（Lifecycle Hoisting）。
+- 项目体现：Pump 由会话级上移为程序级，才能交付会话之前的启动和会话之后的退出。
+
+**知识点二：“正在启动”和“已就绪”是两个不同的状态。**
+
+- 白话解释：饭店可以告诉你“正在备菜”，但不能在菜还没做好时说“可以上桌了”。
+- 专业术语：状态迁移（State Transition）与真实性不变量（Truthful UI Invariant）。
+- 项目体现：starting 在重型模型加载前投递；ready 只在 ASR 和唤醒对象完成初始化后投递。
+
+**知识点三：异常边界要围住整个用户可操作时段。**
+
+- 白话解释：用户可以在加载模型时按 Ctrl+C，不只是在等待唤醒时按。只包住主循环会漏掉启动阶段。
+- 专业术语：异常边界（Exception Boundary）与优雅停机（Graceful Shutdown）。
+- 项目体现：启动初始化和运行循环都处理 KeyboardInterrupt，共用 `stop_presentation()` 收尾。
+
+### 6. 验收方法
+
+- 文案合同：三个 ProgramStatus、WAKE_ACK 正常值和非法参数；
+- 程序集成：一次唤醒后 Ctrl+C，四类反馈各一次，会话获得共享 Coordinator/Pump；
+- 启动边界：录音器初始化期间 Ctrl+C，有 starting 和 exited，没有虚假 ready；
+- 投影合同：ProgramStatus 和唤醒结果均由纯函数决定 kind/args/priority/screen target；
+- 回归：专项 56/56、全量 578/578 通过。
+
+### 7. 下一步
+
+`PRESENT-PUMP-FLUSH-01`。现在 `pending_count == 0` 只表示 Coordinator 队列已被 pump 取空，
+不代表 Renderer 和 output 已返回。下一轮要引入 in-flight 计数和可等待的 flush 合同，
+用慢 output 测试证明退出和会话收尾不丢最后消息。
+
+## 2026-08-16（PRESENT-PUMP-FLUSH-01）：真正的完成交付合同
+
+### 1. 目的
+
+消除“Coordinator 队列空了就等于用户已经看到消息”的竞态。会话收尾和程序退出必须等到
+renderer 与最终 output 真正返回，才能把消息视为交付完成。
+
+### 2. 技术路线
+
+由 Coordinator 统一维护 unfinished 计数：提交时增加，语义去重丢弃或 Pump 完成一次输出时减少；
+deferred 消息继续保持未完成。Coordinator 提供 `join(timeout)`，Pump 在其上提供面向调用方的
+`flush(timeout)`，并收集 renderer/output 的结构化失败。
+
+### 3. 设计原因
+
+队列长度只能描述“还没被消费者取走”的消息，描述不了“已经取走、正在慢速输出”的消息。
+若退出逻辑只等 `pending_count == 0`，最后一条消息可能刚离开队列，程序就停止 Pump，形成尾消息丢失。
+
+### 4. 实现功能
+
+- `PresentationCoordinator.submit()` 原子登记 unfinished，并先物化 iterable，兼容生成器；
+- `drain()` 对真正丢弃的相邻重复项完成计数，对 deferred 项保留所有权；
+- `mark_completed()` 在每次交付尝试结束后释放一个 unfinished，失衡调用直接报错；
+- `join(timeout)` 等待 pending + deferred + in-flight 全部归零；
+- `PresentationPump.flush()` 区分成功、超时和结构化交付失败；
+- 单条 renderer/output 失败被记录，但 Pump 继续交付后续消息；
+- `main.py` 的会话与程序停机都改为 flush 后 stop，不再轮询 `pending_count`。
+
+### 5. 本轮知识
+
+**知识点一：队列为空不等于工作完成。**
+
+- 白话解释：快递从仓库货架拿走，不代表已经送到收件人手里；它可能还在路上。
+- 专业术语：in-flight work、unfinished task tracking、join barrier。
+- 项目体现：unfinished 同时覆盖 pending、deferred 和 Pump 已取走但尚未完成的消息。
+
+**知识点二：完成所有权必须从提交到最终输出连续存在。**
+
+- 白话解释：每张取货单提交时领一个号，只有送达或明确丢弃后才能销号，中途延期不能销号。
+- 专业术语：所有权记账（ownership accounting）与原子状态迁移。
+- 项目体现：submit 增计数；语义去重项在 Coordinator 中完成；真实交付项由 Pump 的 `finally` 完成；deferred 不减计数。
+
+**知识点三：超时与失败不是同一种结果。**
+
+- 白话解释：没等到可能只是送得慢；明确报错则代表某次配送失败，调用者处理方式不同。
+- 专业术语：timeout semantics、failure propagation、failure isolation。
+- 项目体现：flush 超时返回 `False`；交付失败抛出带 intent id、错误类型和原因的异常；一条失败不阻断后一条。
+
+**知识点四：不要持有协调锁执行阻塞等待。**
+
+- 白话解释：等货的人一直抓着仓库门钥匙，送货的人就进不来登记新状态，系统会无故变慢。
+- 专业术语：锁饥饿（lock starvation）与临界区最小化。
+- 项目体现：初版在阻塞 `drain()` 外再持 Pump 条件锁，24 项测试约 9.1 秒；改为 Coordinator unfinished 模型后约 0.974 秒，且竞态合同更清晰。
+
+### 6. 验收方法
+
+- 慢 output：队列已取空但 output 阻塞时，短 timeout 的 flush 必须为 `False`；释放后为 `True`；
+- 失败隔离：第一条 renderer 失败，第二条仍完成，flush 返回结构化失败；
+- 计数边界：相邻重复丢弃、deferred 再交付、生成器提交、失衡完成调用均有测试；
+- 集成回归：会话和程序收尾使用 flush；
+- 专项 24/24 通过（约 0.974 秒），全量 584/584 通过（约 7.243 秒）。
+
+### 7. 下一步
+
+`PRESENT-LEGACY-MESSAGE-CLEANUP-01`：删除已被 `PresentationIntent` 主链取代的旧
+`PresentationMessage`、专属 channel/status/speech policy 和旧合同测试。这里应做一次性统一清理，
+不保留兼容双名；未来 TTS/Web 真正接入时再按真实需求设计交付对象。
+
+## 2026-08-16（PRESENT-LEGACY-MESSAGE-CLEANUP-01）：删除旧消息双轨
+
+### 1. 目的
+
+让 PRESENT 生产代码只存在一个语义入口 `PresentationIntent`，删除早期探索阶段留下的
+`PresentationMessage` 及其渠道、状态和朗读策略，防止未来功能误选旧模型继续扩张。
+
+### 2. 技术路线
+
+先扫描 `src/tests` 的全部旧符号引用，确认旧对象本身只有专属测试使用；再把当前主链仍需要的
+`MessageKind`、`MessagePriority`、`ScreenTarget` 归位到 `presentation_intent.py`，统一修改 import，
+最后删除旧模块和旧测试，并以零引用扫描、专项和全量测试验收。
+
+### 3. 设计原因
+
+旧模型不是毫无价值：它帮助早期把屏幕、TTS、状态生命周期和语义区域列清楚。但实际接线证明
+`text`、channel、speech policy、delivery status 属于不同阶段，塞进一个不可变消息会混合职责。
+探索所得已沉淀到 Intent→Coordinator→Pump→Renderer 分层后，继续保留旧对象只会制造双入口。
+
+### 4. 实现功能
+
+- 三个现役语义枚举迁入 `presentation_intent.py`；
+- Coordinator、Copy、Projection、main 和六组 PRESENT 测试统一从 Intent 模块 import；
+- 删除 `presentation_message.py` 与 `test_presentation_message.py`；
+- 删除 `PresentationMessage`、`DeliveryChannel`、`MessageStatus`、`SpeechPolicy`、
+  `VoiceDeliveryPolicy`，不提供兼容别名；
+- 当前业务链、渲染与输出行为不变。
+
+### 5. 本轮知识
+
+**知识点一：原型的价值可以保留，原型代码不必永久保留。**
+
+- 白话解释：施工脚手架帮助把楼建起来，但楼建好后继续留着会挡路。
+- 专业术语：探索性设计（exploratory design）与脚手架退役（scaffolding retirement）。
+- 项目体现：旧 Message 帮助识别边界；稳定 Intent 主链建立后完整删除旧对象。
+
+**知识点二：迁移要区分“旧容器”和“仍有效的语义”。**
+
+- 白话解释：搬家时扔掉旧柜子，不代表把柜子里的有效证件一起扔掉。
+- 专业术语：概念提炼（concept extraction）与模块内聚（module cohesion）。
+- 项目体现：删除渠道/状态/朗读策略，但保留并归位 kind/priority/screen target。
+
+**知识点三：删除测试数量下降不等于覆盖退化。**
+
+- 白话解释：产品取消一个废弃按钮后，专门测试这个按钮的用例也应该删除。
+- 专业术语：合同退役（contract retirement）与有效测试基线（effective test baseline）。
+- 项目体现：全量由 584 降到 574，恰好删除旧模型的 10 项测试，其余全部通过。
+
+### 6. 验收方法
+
+- 静态扫描：`src/tests` 中旧模块和五个旧类型引用为 0；
+- 文件检查：旧实现文件和旧测试文件均不存在；
+- 专项：Intent、Copy、Projection、Coordinator、Pump、Renderer 共 86/86 通过；
+- 全量：574/574 通过（约 7.295 秒）；
+- UX：没有改变文案、顺序或交互路径，因此不新增真实走查结论。
+
+### 7. 下一步
+
+`PRESENT-FIX-LEAK-01`：清理 recorder/VAD/wakeword 与第三方依赖仍可能直接写入 user 终端的
+开发信息，使用户屏幕只保留 PRESENT SCREEN 内容。该项涉及真实启动输出，自动测试后需要一次
+真实 user 模式确认，并把证据并入最终 PRESENT UX 验收。
+
+## 2026-08-16（PRESENT-FIX-LEAK-01）：开发输出泄漏收尾
+
+### 1. 目的
+
+阻止录音、VAD、唤醒、ASR 和第三方依赖绕过 PRESENT 把模型路径、进度、耗时等开发信息写到
+user 屏幕，同时保留 logging 中的诊断能力。
+
+### 2. 技术路线
+
+项目自身状态统一使用 logging；FunASR 使用其原生 `disable_pbar`/`disable_log` 参数关闭进度条
+和结果表；增加 AST 测试扫描生产运行模块的直接 `print()`。不使用全局 stdout/stderr 重定向。
+
+### 3. 设计原因
+
+全局重定向在单线程脚本里简单，但本项目的 Pump 和 ASR 并发运行：ASR 若临时替换进程级 stderr，
+可能连 Pump 的合法用户反馈一起吞掉。依赖原生静默参数能准确关闭噪声，不改变单一输出权。
+
+### 4. 实现功能
+
+- 旧 `AudioRecorder` 的录音提示从 print 改为 logger；
+- VAD、wakeword、state、LLM 等主路径保持 logging；
+- FunASR `AutoModel` 初始化显式关闭 pbar 与结果表；
+- 每次 `generate()` 同样传递静默参数，Fake 合同验证参数存在；
+- 新增生产模块 AST 护栏，发现直接 print 时报告文件和行号；
+- 保留用户主动运行的诊断脚本和结果查看工具输出。
+
+### 5. 本轮知识
+
+**知识点一：输出隔离必须考虑线程作用域。**
+
+- 白话解释：为了让一个房间安静而拉掉整栋楼的广播，会把正常通知也一起关掉。
+- 专业术语：进程全局副作用（process-global side effect）与并发隔离。
+- 项目体现：拒绝 `redirect_stdout/stderr`，避免 ASR 期间影响 Pump。
+
+**知识点二：优先使用依赖提供的静默合同。**
+
+- 白话解释：让机器自己关闭提示灯，比拿黑布罩住整个控制台更准确。
+- 专业术语：library-native configuration 与最小影响面。
+- 项目体现：FunASR 初始化和 generate 都明确传入 `disable_pbar/disable_log`。
+
+**知识点三：架构边界也可以自动测试。**
+
+- 白话解释：不能只靠大家记住“别直接 print”，应该装一道会报警的门。
+- 专业术语：architecture fitness function、AST 静态护栏。
+- 项目体现：测试解析生产模块语法树，直接 `print()` 调用会使回归失败。
+
+### 6. 验收方法
+
+- FunASR Fake：确认 generate 收到两个静默参数；
+- 静态护栏：七个生产运行模块直接 print 调用为 0；
+- 集成：程序级启动/退出反馈仍经 Pump 可见；
+- 专项 16/16、全量 575/575 通过（约 7.297 秒）；
+- 未启动真实设备，真实 user 终端零泄漏留待最终 UX 会话确认。
+
+### 7. 下一步
+
+`PRESENT-NOACTION-FEEDBACK-01`：为问题编号不存在、没有当前目标、无法暂缓或弃权等
+no_action 结果建立结构化 projection 和用户文案，消除“用户说了话但系统完全沉默”的体验缺口。
+
+### 真实复验补充：静默参数有分层
+
+会话 `20260816_141745` 证明 `disable_pbar/disable_log` 只关闭 FunASR 推理阶段输出，启动阶段仍有
+版本检查和 ModelScope 下载层输出。对应分层修复为：`disable_update` 关闭版本检查，
+`TQDM_DISABLE` 关闭下载层 tqdm，第三方下载 logger 提升到 WARNING。另由真实使用发现 READY
+没有 Ctrl+C 指引，补入固定 PROGRAM_STATUS 文案。修后专项49/49、全量576/576通过，待最短启动复验。
+
+第二次真实会话 `20260816_142352` 进一步证明：官方 `disable_update` 并不等于完全静默，
+FunASR 1.4.1 在判断 disable 前先打印版本。最终只替换版本检查函数，不重定向全局输出。
+同轮新增 WAITING 程序状态，把“结束会话”和“退出程序”明确区分：前者回待机并允许再次唤醒，
+后者只由 Ctrl+C 触发。专项63/63、全量576/576通过，待双会话真实复验。
+
+第三次真实会话 `20260816_142945` 完成泄漏闭环：启动和整轮零第三方/开发信息，READY、
+会话摘要、WAITING、EXITED 状态清晰且没有尾消息丢失，`PRESENT-FIX-LEAK-01` 升为
+`REAL_OK`。本轮 WAITING 后直接 Ctrl+C，第二次真实唤醒仍留给最终双会话 UX 验收。
+
+双会话 `20260816_143151 → 20260816_143201` 随后补齐真实证据：同一程序级 Pump 在第一轮
+零步骤会话结束后返回 WAITING，第二次唤醒创建全新会话并完整收尾，最后 Ctrl+C 交付 EXITED。
+同时“制业枪”复现 no_action 沉默；问题2“已确认”后仍待回答暴露“局部确认”和“整题解决”
+文案未区分，已分别归入 NOACTION 与新登记的 CONFIRMATION-REMAINDER 任务。
+
+后续查证确认需要更正初判：ASR证据完整包含“体积为50毫升”，该段debug无LLM调用；确定性解析
+因句首“是的”直接选择AFFIRM→CONFIRM，程序只清除requires_confirmation，没有执行实体提取，
+持久化记录明确留下amount_value/amount_unit。这是程序不支持“确认+实体回答”复合意图，
+不是LLM遗漏；任务更名为`CLARIFICATION-COMPOUND-CONFIRM-ANSWER-01`并升P0。

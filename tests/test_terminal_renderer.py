@@ -1,10 +1,10 @@
 import unittest
 
 from src.core.presentation_copy import RecordAckResult
-from src.core.presentation_intent import PresentationIntent
-from src.core.presentation_message import (
+from src.core.presentation_intent import (
     MessageKind,
     MessagePriority,
+    PresentationIntent,
     ScreenTarget,
 )
 from src.core.terminal_renderer import TerminalRenderer

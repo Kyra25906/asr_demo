@@ -7,16 +7,19 @@ from src.core.clarification_acceptance import (
 )
 from src.core.presentation_copy import (
     ConfirmationAckResult,
+    ProgramStatus,
     RecordAckResult,
 )
-from src.core.presentation_message import (
+from src.core.presentation_intent import (
     MessageKind,
     MessagePriority,
     ScreenTarget,
 )
 from src.core.presentation_projection import (
     messages_for_observation,
+    messages_for_program_status,
     messages_for_review,
+    messages_for_wake_ack,
 )
 from src.core.unified_observer import (
     UnifiedObservation,
@@ -74,6 +77,29 @@ def _update_action(action_type, display_number):
     }:
         kwargs["answer_text"] = "60摄氏度"
     return ClarificationAction(**kwargs)
+
+
+class ProgramProjectionTests(unittest.TestCase):
+    def test_program_status_projects_fixed_semantics(self):
+        intent = messages_for_program_status(
+            ProgramStatus.READY,
+            request_id="program-1",
+        )[0]
+
+        self.assertEqual(intent.kind, MessageKind.PROGRAM_STATUS)
+        self.assertEqual(intent.args["status"], ProgramStatus.READY)
+        self.assertEqual(intent.priority, MessagePriority.DIRECT_ACK)
+        self.assertEqual(intent.screen_target, ScreenTarget.STATUS)
+
+    def test_wake_ack_projects_keyword_without_rendering_copy(self):
+        intent = messages_for_wake_ack(
+            "小科小科",
+            request_id="program-2",
+        )[0]
+
+        self.assertEqual(intent.kind, MessageKind.WAKE_ACK)
+        self.assertEqual(intent.args, {"keyword": "小科小科"})
+        self.assertEqual(intent.priority, MessagePriority.DIRECT_ACK)
 
 
 class ObservationProjectionTests(unittest.TestCase):

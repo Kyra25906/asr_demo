@@ -1,3 +1,4 @@
+import logging
 import time
 from datetime import datetime
 from pathlib import Path
@@ -13,6 +14,9 @@ from src.config import (
     SAMPLE_RATE,
     VAD_MODEL_PATH,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 class VadAudioRecorder:
@@ -41,7 +45,7 @@ class VadAudioRecorder:
         self._audio_writer = audio_writer or sf.write
         self._clock = clock or time.monotonic
         self._now = now or datetime.now
-        self._status_callback = status_callback or print
+        self._status_callback = status_callback or logger.info
         self._recordings_dir = Path(recordings_dir)
         self._timeline_assembler = TimelineSpeechAssembler()
 
@@ -83,7 +87,7 @@ class VadAudioRecorder:
         config.sample_rate = SAMPLE_RATE
         config.num_threads = 1
 
-        print("正在加载VAD模型……")
+        logger.info("正在加载VAD模型……")
 
         self.vad = (
             sherpa_onnx
@@ -93,7 +97,7 @@ class VadAudioRecorder:
             )
         )
 
-        print("VAD模型加载完成。")
+        logger.info("VAD模型加载完成。")
 
     def record_until_silence(self) -> Path:
         samples_per_read = int(
@@ -126,7 +130,7 @@ class VadAudioRecorder:
                     )
 
                     if overflowed:
-                        print(
+                        logger.warning(
                             "警告：麦克风输入发生溢出。"
                         )
 
@@ -144,7 +148,7 @@ class VadAudioRecorder:
                     ):
                         speech_started = True
                         frozen_pre_roll = timeline.snapshot()
-                        print(
+                        logger.info(
                             "检测到人声，正在录制……"
                         )
 
@@ -201,10 +205,10 @@ class VadAudioRecorder:
 
         duration = len(audio) / SAMPLE_RATE
 
-        print(
-            f"检测到说话结束，"
-            f"音频时长：{duration:.2f}秒"
+        logger.info(
+            "检测到说话结束，音频时长：%.2f秒",
+            duration,
         )
-        print(f"录音已保存：{output_path}")
+        logger.info("录音已保存：%s", output_path)
 
         return output_path
