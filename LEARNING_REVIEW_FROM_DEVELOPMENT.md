@@ -3576,3 +3576,13 @@ FunASR 1.4.1 在判断 disable 前先打印版本。最终只替换版本检查�
 因句首“是的”直接选择AFFIRM→CONFIRM，程序只清除requires_confirmation，没有执行实体提取，
 持久化记录明确留下amount_value/amount_unit。这是程序不支持“确认+实体回答”复合意图，
 不是LLM遗漏；任务更名为`CLARIFICATION-COMPOUND-CONFIRM-ANSWER-01`并升P0。
+
+## 2026-08-16：PRESENT 剩余顺序以数据正确性优先
+
+- 用户确认了新的十项施工顺序，`CLARIFICATION-COMPOUND-CONFIRM-ANSWER-01` 成为当前唯一下一项，
+  `PRESENT-NOACTION-FEEDBACK-01` 顺延为第二项；之后依次是 user/admin 分层、文案一致性、规范记录
+  预览、Delivery Boundary、扩展接缝、回答编号提示、事件提示音和最终双模式真实 UX 验收。
+- 调整原因不是 NOACTION 不重要，而是复合确认缺陷会直接丢失用户已说出的体积字段，属于数据
+  正确性 P0；若先优化反馈，可能只是把错误状态表达得更清楚，不能先解决根因。
+- 清单保留原 15 项表作为范围、历史编号和验收定义；另设唯一权威的十项剩余顺序，避免把历史
+  清单编号误当成施工顺序。交接文档同步声明旧“当前唯一下一项”仅是历史停靠点。

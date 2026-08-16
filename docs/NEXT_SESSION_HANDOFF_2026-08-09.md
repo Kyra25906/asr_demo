@@ -301,3 +301,23 @@ git diff --check
   “是的，是一夜枪，体积为50毫升”，该段没有LLM调用；确定性命令因句首“是的”走
   AFFIRM→CONFIRM，只清确认标志、不提取体积，确认记录仍缺 amount_value/amount_unit。
   这是程序复合意图执行缺陷，文案误导只是后果。
+
+## 13. 2026-08-16 PRESENT 剩余施工顺序重排（用户确认）
+
+此前交接记录中的“当前唯一下一项”是各轮结束时的历史停靠点，不再代表当前顺序。
+从本节起，PRESENT 剩余工作严格按以下顺序推进：
+
+1. `CLARIFICATION-COMPOUND-CONFIRM-ANSWER-01`：P0 复合确认+回答不能丢字段；
+2. `PRESENT-NOACTION-FEEDBACK-01`：NOACTION 容错反馈；
+3. `UX-MODE-01`：user/admin 输出分层；
+4. `SYNC-UI-CLAIMS-01`：文案与真实状态一致性；
+5. `PRESENT-RECORD-PREVIEW-01`：规范记录预览；
+6. `PRESENT-DELIVERY-BOUNDARY-01`：Delivery Boundary 架构护栏；
+7. `PRESENT-EXTENSION-SEAMS-01`：QUERY/DENY/WARNING/导出扩展接缝；
+8. `GAPS-FIX-ANSWER-HINT-01`：回答编号提示；
+9. `UX-FIX-TONE-01`：事件提示音；
+10. `PRESENT-FINAL-UX-VERIFY-01`：最终双模式真实 UX 验收。
+
+**当前唯一下一项**：`CLARIFICATION-COMPOUND-CONFIRM-ANSWER-01`。先修数据正确性，确保
+同一句中的确认和实体回答都被执行、字段不丢，再处理 NOACTION 和后续呈现体验；未经用户重新
+确认不得跳项。
